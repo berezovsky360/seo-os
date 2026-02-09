@@ -162,7 +162,7 @@ export default function Home() {
       case 'authors':
         return <AuthorRotator userRole={userRole} onBack={goBack} />;
       case 'marketplace':
-        return <Marketplace onBack={goBack} />;
+        return <Marketplace onBack={goBack} onChangeView={changeView} />;
       case 'key-management':
         return <KeyManagement onBack={goBack} />;
       case 'event-log':
