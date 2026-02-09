@@ -62,7 +62,7 @@ function setViewUrl(view: ViewState) {
 }
 
 export default function Home() {
-  const [currentView, setCurrentViewState] = useState<ViewState>(() => getViewFromUrl());
+  const [currentView, setCurrentViewState] = useState<ViewState>('dashboard');
   const [userRole, setUserRole] = useState<UserRole>('ADMIN');
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
   const [selectedSite, setSelectedSite] = useState<Site | null>(null);
@@ -73,6 +73,14 @@ export default function Home() {
   const changeView = useCallback((view: ViewState) => {
     setCurrentViewState(view);
     setViewUrl(view);
+  }, []);
+
+  // Read initial view from URL on client mount (avoids SSR hydration mismatch)
+  useEffect(() => {
+    const viewFromUrl = getViewFromUrl();
+    if (viewFromUrl !== 'dashboard') {
+      setCurrentViewState(viewFromUrl);
+    }
   }, []);
 
   // Handle browser back/forward

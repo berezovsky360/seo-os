@@ -2,15 +2,16 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import {
-  ChevronLeft, Search, Filter, Upload, CheckCircle2,
-  Loader2, Globe, Edit3, Save, X, ChevronDown,
-  ArrowUpDown, ExternalLink, AlertCircle, RefreshCw
+  Search, Filter, Download, ChevronDown,
+  Loader2, CheckCircle2, AlertCircle, Lock,
+  RefreshCw, Upload, FileEdit
 } from 'lucide-react';
 import { useSites } from '@/hooks/useSites';
 import { useToast } from '@/lib/contexts/ToastContext';
 import { supabase } from '@/lib/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import SEOScoreIndicator from '@/components/SEOScoreIndicator';
+
+// ====== Types ======
 
 interface BulkPost {
   id: string;
@@ -30,22 +31,19 @@ interface BulkPost {
   url: string | null;
 }
 
-interface EditingFields {
-  seo_title?: string;
-  seo_description?: string;
-  focus_keyword?: string;
+type TabId = 'all' | 'unoptimized' | 'pending' | 'drafts';
+
+interface EditState {
+  seo_title: string;
+  seo_description: string;
 }
 
-interface BulkMetadataPushProps {
-  onBack?: () => void;
-}
+// ====== Data fetching ======
 
-// Fetch all posts across all sites
 async function fetchAllPosts(): Promise<BulkPost[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
-  // Get user's sites
   const { data: sites } = await supabase
     .from('sites')
     .select('id, name, url')
@@ -56,7 +54,6 @@ async function fetchAllPosts(): Promise<BulkPost[]> {
   const siteIds = sites.map(s => s.id);
   const siteMap = new Map(sites.map(s => [s.id, s]));
 
-  // Get all posts from these sites
   const { data: posts } = await supabase
     .from('posts')
     .select('id, site_id, title, wp_post_id, status, seo_score, seo_title, seo_description, focus_keyword, canonical_url, robots_meta, word_count, url')
@@ -75,67 +72,169 @@ async function fetchAllPosts(): Promise<BulkPost[]> {
   });
 }
 
+// ====== Helpers ======
+
+function getStatusIcon(status: string) {
+  switch (status) {
+    case 'publish':
+      return <CheckCircle2 size={18} className="text-emerald-500" />;
+    case 'pending':
+      return <FileEdit size={18} className="text-amber-500" />;
+    case 'draft':
+      return <Lock size={18} className="text-gray-400" />;
+    default:
+      return <AlertCircle size={18} className="text-gray-400" />;
+  }
+}
+
+function charCountColor(current: number, max: number): string {
+  if (current === 0) return 'text-gray-300';
+  if (current > max) return 'text-rose-500';
+  if (current > max * 0.9) return 'text-amber-500';
+  return 'text-gray-400';
+}
+
+function extractPath(url: string | null, siteUrl: string): string {
+  if (!url) return '/';
+  try {
+    const u = new URL(url);
+    return u.pathname;
+  } catch {
+    return url.replace(siteUrl, '') || '/';
+  }
+}
+
+// ====== SERP Preview ======
+
+function SERPPreview({ title, description, url }: { title: string; description: string; url: string }) {
+  const displayUrl = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const parts = displayUrl.split('/');
+  const breadcrumb = parts.length > 1
+    ? `${parts[0]} › ${parts.slice(1).join(' › ')}`
+    : parts[0];
+
+  return (
+    <div className="min-w-[200px] max-w-[320px]">
+      <p className="text-sm text-blue-700 font-medium leading-tight truncate hover:underline cursor-pointer">
+        {title || 'Page Title'}
+      </p>
+      <p className="text-xs text-emerald-700 truncate mt-0.5">{breadcrumb}</p>
+      <p className="text-xs text-gray-600 leading-relaxed line-clamp-2 mt-0.5">
+        {description || 'No meta description set.'}
+      </p>
+    </div>
+  );
+}
+
+// ====== Main Component ======
+
+interface BulkMetadataPushProps {
+  onBack?: () => void;
+}
+
 export default function BulkMetadataPush({ onBack }: BulkMetadataPushProps) {
   const { data: sites = [] } = useSites();
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch all posts
   const { data: allPosts = [], isLoading, refetch } = useQuery({
     queryKey: ['bulk-posts'],
     queryFn: fetchAllPosts,
-    staleTime: 60 * 1000,
+    staleTime: 60_000,
   });
 
-  // UI State
+  // UI state
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterSite, setFilterSite] = useState<string>('all');
-  const [sortField, setSortField] = useState<'title' | 'seo_score' | 'site_name'>('site_name');
-  const [sortAsc, setSortAsc] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabId>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingFields, setEditingFields] = useState<EditingFields>({});
+  const [edits, setEdits] = useState<Record<string, EditState>>({});
   const [pushing, setPushing] = useState(false);
-  const [pushingIds, setPushingIds] = useState<Set<string>>(new Set());
+  const [showSearch, setShowSearch] = useState(false);
 
-  // Filter + sort posts
+  // Unsaved changes tracking
+  const changedPostIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const [postId, edit] of Object.entries(edits)) {
+      const original = allPosts.find(p => p.id === postId);
+      if (!original) continue;
+      if (
+        edit.seo_title !== (original.seo_title || '') ||
+        edit.seo_description !== (original.seo_description || '')
+      ) {
+        ids.push(postId);
+      }
+    }
+    return ids;
+  }, [edits, allPosts]);
+
+  const changedSiteCount = useMemo(() => {
+    const siteIds = new Set(changedPostIds.map(id => allPosts.find(p => p.id === id)?.site_id).filter(Boolean));
+    return siteIds.size;
+  }, [changedPostIds, allPosts]);
+
+  // Filter + tab
   const filteredPosts = useMemo(() => {
     let result = allPosts;
 
-    if (searchQuery) {
+    // Tab filter
+    switch (activeTab) {
+      case 'unoptimized':
+        result = result.filter(p => !p.seo_title || !p.seo_description);
+        break;
+      case 'pending':
+        result = result.filter(p => p.status === 'pending');
+        break;
+      case 'drafts':
+        result = result.filter(p => p.status === 'draft');
+        break;
+    }
+
+    // Search
+    if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(p =>
         p.title?.toLowerCase().includes(q) ||
         p.seo_title?.toLowerCase().includes(q) ||
-        p.focus_keyword?.toLowerCase().includes(q)
+        p.site_name?.toLowerCase().includes(q) ||
+        p.url?.toLowerCase().includes(q)
       );
     }
 
-    if (filterSite !== 'all') {
-      result = result.filter(p => p.site_id === filterSite);
-    }
-
-    result.sort((a, b) => {
-      let cmp = 0;
-      if (sortField === 'title') cmp = (a.title || '').localeCompare(b.title || '');
-      else if (sortField === 'seo_score') cmp = (a.seo_score || 0) - (b.seo_score || 0);
-      else if (sortField === 'site_name') cmp = a.site_name.localeCompare(b.site_name);
-      return sortAsc ? cmp : -cmp;
-    });
-
     return result;
-  }, [allPosts, searchQuery, filterSite, sortField, sortAsc]);
+  }, [allPosts, activeTab, searchQuery]);
 
-  const toggleSort = (field: typeof sortField) => {
-    if (sortField === field) setSortAsc(!sortAsc);
-    else { setSortField(field); setSortAsc(true); }
-  };
+  // Tab counts
+  const tabCounts = useMemo(() => ({
+    all: allPosts.length,
+    unoptimized: allPosts.filter(p => !p.seo_title || !p.seo_description).length,
+    pending: allPosts.filter(p => p.status === 'pending').length,
+    drafts: allPosts.filter(p => p.status === 'draft').length,
+  }), [allPosts]);
 
+  // Editing
+  const getEditValue = useCallback((postId: string, field: keyof EditState): string => {
+    if (edits[postId]) return edits[postId][field];
+    const post = allPosts.find(p => p.id === postId);
+    if (!post) return '';
+    return field === 'seo_title' ? (post.seo_title || '') : (post.seo_description || '');
+  }, [edits, allPosts]);
+
+  const updateEdit = useCallback((postId: string, field: keyof EditState, value: string) => {
+    setEdits(prev => {
+      const post = allPosts.find(p => p.id === postId);
+      const existing = prev[postId] || {
+        seo_title: post?.seo_title || '',
+        seo_description: post?.seo_description || '',
+      };
+      return { ...prev, [postId]: { ...existing, [field]: value } };
+    });
+  }, [allPosts]);
+
+  // Selection
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
@@ -148,59 +247,46 @@ export default function BulkMetadataPush({ onBack }: BulkMetadataPushProps) {
     }
   };
 
-  const startEditing = (post: BulkPost) => {
-    setEditingId(post.id);
-    setEditingFields({
-      seo_title: post.seo_title || '',
-      seo_description: post.seo_description || '',
-      focus_keyword: post.focus_keyword || '',
-    });
-  };
+  // Save all changes to Supabase
+  const handleSaveDrafts = async () => {
+    if (changedPostIds.length === 0) return;
 
-  const saveEdit = async () => {
-    if (!editingId) return;
+    let saved = 0;
+    for (const postId of changedPostIds) {
+      const edit = edits[postId];
+      if (!edit) continue;
 
-    try {
       const { error } = await supabase
         .from('posts')
         .update({
-          seo_title: editingFields.seo_title || null,
-          seo_description: editingFields.seo_description || null,
-          focus_keyword: editingFields.focus_keyword || null,
+          seo_title: edit.seo_title || null,
+          seo_description: edit.seo_description || null,
         })
-        .eq('id', editingId);
+        .eq('id', postId);
 
-      if (error) throw error;
-
-      toast.success('Metadata saved locally');
-      setEditingId(null);
-      refetch();
-    } catch {
-      toast.error('Failed to save');
+      if (!error) saved++;
     }
+
+    toast.success(`Saved ${saved} changes`);
+    setEdits({});
+    refetch();
   };
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditingFields({});
-  };
+  // Push to WordPress
+  const handlePushAll = async () => {
+    const toPush = changedPostIds.length > 0 ? changedPostIds : Array.from(selectedIds);
+    if (toPush.length === 0) return;
 
-  // Push selected posts to WordPress
-  const handlePushSelected = async () => {
-    if (selectedIds.size === 0) return;
+    // Save first
+    if (changedPostIds.length > 0) await handleSaveDrafts();
 
     setPushing(true);
-    let successCount = 0;
-    let failCount = 0;
+    let ok = 0;
+    let fail = 0;
 
-    for (const postId of selectedIds) {
+    for (const postId of toPush) {
       const post = allPosts.find(p => p.id === postId);
-      if (!post || !post.wp_post_id) {
-        failCount++;
-        continue;
-      }
-
-      setPushingIds(prev => new Set(prev).add(postId));
+      if (!post?.wp_post_id) { fail++; continue; }
 
       try {
         const res = await fetch(`/api/posts/${postId}/publish`, {
@@ -208,305 +294,262 @@ export default function BulkMetadataPush({ onBack }: BulkMetadataPushProps) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'update' }),
         });
-
-        if (res.ok) {
-          successCount++;
-        } else {
-          failCount++;
-        }
+        if (res.ok) ok++; else fail++;
       } catch {
-        failCount++;
+        fail++;
       }
-
-      setPushingIds(prev => {
-        const next = new Set(prev);
-        next.delete(postId);
-        return next;
-      });
     }
 
     setPushing(false);
-    setSelectedIds(new Set());
-
-    if (successCount > 0) toast.success(`Pushed ${successCount} post(s) to WordPress`);
-    if (failCount > 0) toast.warning(`${failCount} post(s) failed to push`);
-
+    if (ok > 0) toast.success(`Pushed ${ok} post(s) to WordPress`);
+    if (fail > 0) toast.error(`${fail} failed to push`);
     refetch();
     queryClient.invalidateQueries({ queryKey: ['posts'] });
   };
 
-  const seoTitleLength = (editingFields.seo_title || '').length;
-  const seoDescLength = (editingFields.seo_description || '').length;
+  const discardChanges = () => {
+    setEdits({});
+  };
+
+  // ====== Render ======
+
+  const tabs: { id: TabId; label: string; count: number }[] = [
+    { id: 'all', label: 'All Pages', count: tabCounts.all },
+    { id: 'unoptimized', label: 'Unoptimized', count: tabCounts.unoptimized },
+    { id: 'pending', label: 'Pending Sync', count: tabCounts.pending },
+    { id: 'drafts', label: 'Drafts', count: tabCounts.drafts },
+  ];
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full flex flex-col bg-[#F5F6F8]">
       {/* Header */}
-      <div className="flex justify-between items-center px-8 py-5 bg-[#F5F6F8] border-b border-gray-200 sticky top-0 z-10">
-        <div className="flex items-center gap-4">
-          {onBack && (
-            <>
-              <button
-                onClick={onBack}
-                className="flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm"
-              >
-                <ChevronLeft size={16} />
-                Back
-              </button>
-              <div className="h-4 w-px bg-gray-300" />
-            </>
-          )}
-          <div className="flex items-center gap-2">
-            <Globe size={20} className="text-gray-900" />
-            <h1 className="text-lg font-bold text-gray-900">Bulk Metadata Editor</h1>
+      <div className="flex-shrink-0 bg-white border-b border-gray-200">
+        <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 py-4">
+          <div>
+            <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-1">
+              <span>SEO OS</span>
+              <span>›</span>
+              <span className="text-gray-600">Bulk Meta Editor</span>
+            </div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Bulk Meta Editor</h1>
           </div>
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
-            {filteredPosts.length} posts
-          </span>
+
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={() => setShowSearch(!showSearch)}
+              className="sm:hidden p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+            >
+              <Search size={18} />
+            </button>
+            <button className="hidden sm:flex items-center gap-2 px-3 sm:px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 shadow-sm">
+              <Filter size={16} />
+              <span className="hidden sm:inline">Filter</span>
+            </button>
+            <button className="hidden sm:flex items-center gap-2 px-3 sm:px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 shadow-sm">
+              <Download size={16} />
+              <span className="hidden sm:inline">Export CSV</span>
+            </button>
+            <button
+              onClick={() => refetch()}
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 shadow-md shadow-indigo-200"
+            >
+              <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">Sync</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => refetch()}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 bg-white border border-gray-200 rounded-lg shadow-sm"
-          >
-            <RefreshCw size={14} />
-            Refresh
-          </button>
-          {selectedIds.size > 0 && (
+        {/* Search (mobile expandable, desktop inline) */}
+        <div className={`px-4 sm:px-6 lg:px-8 pb-3 ${showSearch ? 'block' : 'hidden sm:block'}`}>
+          <div className="flex items-center bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 gap-2 max-w-lg focus-within:ring-2 focus-within:ring-indigo-200 focus-within:border-indigo-300 transition-all">
+            <Search size={16} className="text-gray-400 flex-shrink-0" />
+            <input
+              type="text"
+              placeholder="Search pages, titles, sites..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-transparent text-sm text-gray-700 placeholder-gray-400 outline-none w-full"
+            />
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-0 px-4 sm:px-6 lg:px-8 border-b border-gray-100 overflow-x-auto">
+          {tabs.map(tab => (
             <button
-              onClick={handlePushSelected}
-              disabled={pushing}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200 disabled:opacity-50"
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-3 text-sm font-semibold whitespace-nowrap border-b-2 transition-colors ${
+                activeTab === tab.id
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
             >
-              {pushing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-              Push {selectedIds.size} to WordPress
+              {tab.label}
+              <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${
+                activeTab === tab.id ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'
+              }`}>
+                {tab.count}
+              </span>
             </button>
-          )}
+          ))}
         </div>
       </div>
 
-      <div className="p-8">
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 mb-6">
-          <div className="relative flex-1 max-w-sm">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by title, SEO title, keyword..."
-              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          <select
-            value={filterSite}
-            onChange={(e) => setFilterSite(e.target.value)}
-            className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="all">All Sites</option>
-            {sites.map((site: any) => (
-              <option key={site.id} value={site.id}>{site.name || site.url}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Table */}
+      {/* Table */}
+      <div className="flex-1 overflow-auto">
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 size={32} className="animate-spin text-gray-300" />
+            <Loader2 size={24} className="animate-spin text-gray-400 mr-3" />
+            <span className="text-sm text-gray-500">Loading pages...</span>
           </div>
         ) : filteredPosts.length === 0 ? (
-          <div className="text-center py-16">
-            <Globe size={48} className="text-gray-200 mx-auto mb-4" />
-            <h3 className="text-gray-500 font-medium mb-1">No posts found</h3>
-            <p className="text-sm text-gray-400">
-              Sync your WordPress sites first to see posts here.
-            </p>
+          <div className="text-center py-20">
+            <Search size={40} className="text-gray-300 mx-auto mb-3" />
+            <p className="text-sm text-gray-400">No pages found</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50/50">
-                    <th className="w-10 px-4 py-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.size === filteredPosts.length && filteredPosts.length > 0}
-                        onChange={toggleSelectAll}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                    </th>
-                    <th
-                      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
-                      onClick={() => toggleSort('site_name')}
-                    >
-                      <div className="flex items-center gap-1">Site <ArrowUpDown size={10} /></div>
-                    </th>
-                    <th
-                      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
-                      onClick={() => toggleSort('title')}
-                    >
-                      <div className="flex items-center gap-1">Title <ArrowUpDown size={10} /></div>
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">SEO Title</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Meta Description</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Keyword</th>
-                    <th
-                      className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
-                      onClick={() => toggleSort('seo_score')}
-                    >
-                      <div className="flex items-center gap-1 justify-center">Score <ArrowUpDown size={10} /></div>
-                    </th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredPosts.map((post) => {
-                    const isEditing = editingId === post.id;
-                    const isSelected = selectedIds.has(post.id);
-                    const isPushing = pushingIds.has(post.id);
-
-                    return (
-                      <tr
-                        key={post.id}
-                        className={`border-b border-gray-50 transition-colors ${
-                          isSelected ? 'bg-indigo-50/50' : 'hover:bg-gray-50/50'
-                        }`}
-                      >
-                        <td className="px-4 py-3">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleSelect(post.id)}
-                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-1 rounded-md truncate max-w-[120px] inline-block">
-                            {post.site_name}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2 max-w-[200px]">
-                            <span className="text-sm font-medium text-gray-900 truncate">{post.title || 'Untitled'}</span>
-                            {post.url && (
-                              <a href={post.url} target="_blank" rel="noopener noreferrer" className="text-gray-300 hover:text-indigo-500 shrink-0">
-                                <ExternalLink size={12} />
-                              </a>
-                            )}
-                          </div>
-                          {isPushing && (
-                            <div className="flex items-center gap-1 text-xs text-indigo-600 mt-1">
-                              <Loader2 size={10} className="animate-spin" />
-                              Pushing...
-                            </div>
-                          )}
-                        </td>
-
-                        {/* SEO Title */}
-                        <td className="px-4 py-3 max-w-[200px]">
-                          {isEditing ? (
-                            <div>
-                              <input
-                                type="text"
-                                value={editingFields.seo_title || ''}
-                                onChange={(e) => setEditingFields(f => ({ ...f, seo_title: e.target.value }))}
-                                className="w-full px-2 py-1.5 text-xs border border-indigo-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                placeholder="SEO Title"
-                              />
-                              <span className={`text-[10px] ${seoTitleLength > 60 ? 'text-red-500' : 'text-gray-400'}`}>
-                                {seoTitleLength}/60
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-600 truncate block">{post.seo_title || '—'}</span>
-                          )}
-                        </td>
-
-                        {/* Meta Description */}
-                        <td className="px-4 py-3 max-w-[250px]">
-                          {isEditing ? (
-                            <div>
-                              <textarea
-                                value={editingFields.seo_description || ''}
-                                onChange={(e) => setEditingFields(f => ({ ...f, seo_description: e.target.value }))}
-                                className="w-full px-2 py-1.5 text-xs border border-indigo-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
-                                rows={2}
-                                placeholder="Meta description"
-                              />
-                              <span className={`text-[10px] ${seoDescLength > 160 ? 'text-red-500' : 'text-gray-400'}`}>
-                                {seoDescLength}/160
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-600 truncate block">{post.seo_description || '—'}</span>
-                          )}
-                        </td>
-
-                        {/* Focus Keyword */}
-                        <td className="px-4 py-3 max-w-[120px]">
-                          {isEditing ? (
-                            <input
-                              type="text"
-                              value={editingFields.focus_keyword || ''}
-                              onChange={(e) => setEditingFields(f => ({ ...f, focus_keyword: e.target.value }))}
-                              className="w-full px-2 py-1.5 text-xs border border-indigo-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                              placeholder="Keyword"
-                            />
-                          ) : (
-                            <span className="text-xs text-gray-600 truncate block">{post.focus_keyword || '—'}</span>
-                          )}
-                        </td>
-
-                        {/* SEO Score */}
-                        <td className="px-4 py-3 text-center">
-                          {post.seo_score != null ? (
-                            <SEOScoreIndicator score={post.seo_score} size="sm" />
-                          ) : (
-                            <span className="text-xs text-gray-300">—</span>
-                          )}
-                        </td>
-
-                        {/* Actions */}
-                        <td className="px-4 py-3 text-center">
-                          {isEditing ? (
-                            <div className="flex items-center gap-1 justify-center">
-                              <button
-                                onClick={saveEdit}
-                                className="p-1.5 text-green-600 hover:bg-green-50 rounded-md"
-                                title="Save"
-                              >
-                                <Save size={14} />
-                              </button>
-                              <button
-                                onClick={cancelEdit}
-                                className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-md"
-                                title="Cancel"
-                              >
-                                <X size={14} />
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => startEditing(post)}
-                              className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md"
-                              title="Edit metadata"
-                            >
-                              <Edit3 size={14} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          <div className="min-w-[900px]">
+            {/* Table header */}
+            <div className="grid grid-cols-[40px_1fr_1.2fr_1.5fr_1fr] bg-gray-50 border-b border-gray-200 sticky top-0 z-5">
+              <div className="flex items-center justify-center py-3">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === filteredPosts.length && filteredPosts.length > 0}
+                  onChange={toggleSelectAll}
+                  className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+              </div>
+              <div className="py-3 px-3">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">URL & Site</span>
+              </div>
+              <div className="py-3 px-3">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Page SEO Title</span>
+              </div>
+              <div className="py-3 px-3">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Meta Description</span>
+              </div>
+              <div className="py-3 px-3">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">SERP Preview</span>
+              </div>
             </div>
+
+            {/* Table rows */}
+            {filteredPosts.map(post => {
+              const titleVal = getEditValue(post.id, 'seo_title');
+              const descVal = getEditValue(post.id, 'seo_description');
+              const isChanged = changedPostIds.includes(post.id);
+              const path = extractPath(post.url, post.site_url);
+              const fullUrl = post.url || `${post.site_url}${path}`;
+
+              return (
+                <div
+                  key={post.id}
+                  className={`grid grid-cols-[40px_1fr_1.2fr_1.5fr_1fr] border-b border-gray-100 hover:bg-gray-50/50 transition-colors ${
+                    isChanged ? 'bg-amber-50/30' : 'bg-white'
+                  }`}
+                >
+                  {/* Checkbox + Status */}
+                  <div className="flex flex-col items-center justify-center gap-1.5 py-4">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(post.id)}
+                      onChange={() => toggleSelect(post.id)}
+                      className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    {getStatusIcon(post.status)}
+                  </div>
+
+                  {/* URL & Site */}
+                  <div className="py-4 px-3 flex flex-col justify-center min-w-0">
+                    <span className="text-sm font-semibold text-blue-600 truncate">{post.site_name}</span>
+                    <span className="text-xs text-gray-400 truncate mt-0.5">{path}</span>
+                  </div>
+
+                  {/* SEO Title (editable) */}
+                  <div className="py-4 px-3 flex flex-col justify-center">
+                    <textarea
+                      value={titleVal}
+                      onChange={(e) => updateEdit(post.id, 'seo_title', e.target.value)}
+                      rows={2}
+                      className="w-full text-sm text-gray-900 bg-transparent border border-transparent hover:border-gray-200 focus:border-indigo-300 focus:ring-1 focus:ring-indigo-200 rounded-lg px-2 py-1.5 resize-none outline-none transition-all"
+                      placeholder="Enter SEO title..."
+                    />
+                    <div className="flex justify-end mt-1">
+                      <span className={`text-[10px] font-medium tabular-nums ${charCountColor(titleVal.length, 60)}`}>
+                        {titleVal.length} / 60
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Meta Description (editable) */}
+                  <div className="py-4 px-3 flex flex-col justify-center">
+                    <textarea
+                      value={descVal}
+                      onChange={(e) => updateEdit(post.id, 'seo_description', e.target.value)}
+                      rows={3}
+                      className="w-full text-sm text-gray-900 bg-transparent border border-transparent hover:border-gray-200 focus:border-indigo-300 focus:ring-1 focus:ring-indigo-200 rounded-lg px-2 py-1.5 resize-none outline-none transition-all"
+                      placeholder="Enter meta description..."
+                    />
+                    <div className="flex justify-end mt-1">
+                      <span className={`text-[10px] font-medium tabular-nums ${charCountColor(descVal.length, 160)}`}>
+                        {descVal.length} / 160
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* SERP Preview */}
+                  <div className="py-4 px-3 flex items-center">
+                    <SERPPreview
+                      title={titleVal || post.title}
+                      description={descVal}
+                      url={fullUrl}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
+
+      {/* Bottom action bar */}
+      {changedPostIds.length > 0 && (
+        <div className="flex-shrink-0 flex items-center justify-between px-4 sm:px-6 lg:px-8 py-3 bg-white border-t border-gray-200 shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.05)]">
+          <div className="flex items-center gap-2">
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+            <span className="text-sm text-gray-600">
+              <strong>{changedPostIds.length}</strong> unsaved metadata change{changedPostIds.length !== 1 ? 's' : ''}
+              {changedSiteCount > 0 && (
+                <span className="text-gray-400"> across {changedSiteCount} site{changedSiteCount !== 1 ? 's' : ''}</span>
+              )}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={discardChanges}
+              className="px-3 sm:px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              Discard changes
+            </button>
+            <button
+              onClick={handleSaveDrafts}
+              className="px-3 sm:px-4 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 shadow-sm"
+            >
+              Save Drafts
+            </button>
+            <button
+              onClick={handlePushAll}
+              disabled={pushing}
+              className="flex items-center gap-2 px-4 sm:px-5 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-50 transition-colors"
+            >
+              {pushing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              <span>Push All Changes</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
