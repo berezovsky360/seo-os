@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   X,
   Save,
@@ -112,10 +112,24 @@ export default function ArticleEditor({
   const [analysisData, setAnalysisData] = useState<any>(null)
   const [editorMode, setEditorMode] = useState<'visual' | 'code'>('visual')
 
-  // Cover generation state
+  // Cover / featured image state
   const [generatingCover, setGeneratingCover] = useState(false)
   const [generatedCoverUrl, setGeneratedCoverUrl] = useState<string | null>(article.og_image_url || null)
   const [coverPipelineStep, setCoverPipelineStep] = useState<string>('idle')
+  const featuredImageInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFeaturedImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      setGeneratedCoverUrl(dataUrl)
+      setArticle(prev => ({ ...prev, og_image_url: dataUrl }))
+      setHasUnsavedChanges(true)
+    }
+    reader.readAsDataURL(file)
+  }
 
   // Version history state
   const [versions, setVersions] = useState<VersionEntry[]>([])
@@ -203,7 +217,44 @@ export default function ArticleEditor({
 
   // Format toolbar buttons
   const formatText = (format: string) => {
-    // Simple formatting helpers (would integrate with a rich text editor library in production)
+    if (editorMode === 'visual') {
+      // Visual mode: use execCommand on contentEditable div
+      switch (format) {
+        case 'bold':
+          document.execCommand('bold')
+          break
+        case 'italic':
+          document.execCommand('italic')
+          break
+        case 'link':
+          const linkUrl = prompt('Enter URL:')
+          if (linkUrl) document.execCommand('createLink', false, linkUrl)
+          break
+        case 'list':
+          document.execCommand('insertUnorderedList')
+          break
+        case 'quote':
+          document.execCommand('formatBlock', false, 'blockquote')
+          break
+        case 'code':
+          // Wrap selection in <code> tag
+          const selection = window.getSelection()
+          if (selection && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0)
+            const code = document.createElement('code')
+            range.surroundContents(code)
+          }
+          break
+      }
+      // Sync contentEditable HTML back to state
+      const editor = document.getElementById('visual-editor')
+      if (editor) {
+        updateField('content', editor.innerHTML)
+      }
+      return
+    }
+
+    // Code mode: manipulate textarea selection
     const textarea = document.getElementById('article-content') as HTMLTextAreaElement
     if (!textarea) return
 
@@ -607,6 +658,7 @@ export default function ArticleEditor({
             <div className="mb-6">
               {editorMode === 'visual' ? (
                 <div
+                  id="visual-editor"
                   className="w-full min-h-[600px] border border-gray-200 rounded-lg px-6 py-4 text-base leading-relaxed focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent overflow-y-auto bg-white prose prose-sm max-w-none
                     prose-headings:text-gray-900 prose-p:text-gray-700 prose-a:text-indigo-600 prose-strong:text-gray-900
                     prose-img:rounded-lg prose-img:shadow-sm"
@@ -635,12 +687,84 @@ export default function ArticleEditor({
             </div>
 
             {/* Featured Image */}
+            <input
+              ref={featuredImageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFeaturedImageUpload}
+            />
             {generatedCoverUrl ? (
               <div className="relative rounded-xl overflow-hidden border border-gray-200">
                 <img src={generatedCoverUrl} alt="Featured image" className="w-full h-48 object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
                 <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
                   <span className="text-white text-xs font-semibold drop-shadow">Featured Image</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => featuredImageInputRef.current?.click()}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-white/20 backdrop-blur-sm text-white text-xs font-semibold rounded-lg hover:bg-white/30 transition-colors"
+                    >
+                      <ImageIcon size={12} />
+                      Replace
+                    </button>
+                    {isNanaBananaEnabled && (
+                      <button
+                        onClick={async () => {
+                          setGeneratingCover(true)
+                          setCoverPipelineStep('prompt')
+                          try {
+                            const res = await fetch('/api/nana-banana/pipeline', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ site_id: article.site_id, post_id: article.id }),
+                            })
+                            const data = await res.json()
+                            if (!res.ok) throw new Error(data.error || 'Pipeline failed')
+                            setCoverPipelineStep('done')
+                            if (data.media_url) {
+                              setGeneratedCoverUrl(data.media_url)
+                              setArticle(prev => ({ ...prev, og_image_url: data.media_url }))
+                              setHasUnsavedChanges(true)
+                            }
+                          } catch (err) {
+                            setCoverPipelineStep('idle')
+                          } finally {
+                            setGeneratingCover(false)
+                          }
+                        }}
+                        disabled={generatingCover}
+                        className="flex items-center gap-1 px-2.5 py-1 bg-white/20 backdrop-blur-sm text-white text-xs font-semibold rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
+                      >
+                        {generatingCover ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                        Regenerate
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setGeneratedCoverUrl(null)
+                        setArticle(prev => ({ ...prev, og_image_url: null }))
+                        setHasUnsavedChanges(true)
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-red-500/30 backdrop-blur-sm text-white text-xs font-semibold rounded-lg hover:bg-red-500/50 transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center">
+                <ImageIcon size={36} className="mx-auto text-gray-400 mb-3" />
+                <p className="text-sm font-medium text-gray-700 mb-4">Featured Image</p>
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => featuredImageInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg text-sm hover:bg-indigo-700 transition-colors"
+                  >
+                    <ImageIcon size={16} />
+                    Upload Image
+                  </button>
                   {isNanaBananaEnabled && (
                     <button
                       onClick={async () => {
@@ -667,69 +791,25 @@ export default function ArticleEditor({
                         }
                       }}
                       disabled={generatingCover}
-                      className="flex items-center gap-1 px-2.5 py-1 bg-white/20 backdrop-blur-sm text-white text-xs font-semibold rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-yellow-400 to-orange-500 text-white font-semibold rounded-lg text-sm hover:from-yellow-500 hover:to-orange-600 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {generatingCover ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                      Regenerate
+                      {generatingCover ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" />
+                          {coverPipelineStep === 'prompt' ? 'Prompt...' :
+                           coverPipelineStep === 'image' ? 'Image...' :
+                           coverPipelineStep === 'seo' ? 'SEO...' :
+                           coverPipelineStep === 'push' ? 'Upload...' : 'Processing...'}
+                        </>
+                      ) : (
+                        <>
+                          <Wand2 size={16} />
+                          Generate Cover
+                        </>
+                      )}
                     </button>
                   )}
                 </div>
-              </div>
-            ) : isNanaBananaEnabled ? (
-              <div className="border-2 border-dashed border-yellow-300 bg-yellow-50/50 rounded-xl p-6 text-center">
-                <Wand2 size={36} className="mx-auto text-yellow-500 mb-3" />
-                <p className="text-sm font-medium text-gray-700 mb-1">AI Cover Generation</p>
-                <p className="text-xs text-gray-500 mb-4">Generate a unique featured image with Nana Banana</p>
-                <button
-                  onClick={async () => {
-                    setGeneratingCover(true)
-                    setCoverPipelineStep('prompt')
-                    try {
-                      const res = await fetch('/api/nana-banana/pipeline', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ site_id: article.site_id, post_id: article.id }),
-                      })
-                      const data = await res.json()
-                      if (!res.ok) throw new Error(data.error || 'Pipeline failed')
-                      setCoverPipelineStep('done')
-                      if (data.media_url) {
-                        setGeneratedCoverUrl(data.media_url)
-                        setArticle(prev => ({ ...prev, og_image_url: data.media_url }))
-                        setHasUnsavedChanges(true)
-                      }
-                    } catch (err) {
-                      setCoverPipelineStep('idle')
-                    } finally {
-                      setGeneratingCover(false)
-                    }
-                  }}
-                  disabled={generatingCover}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-yellow-400 to-orange-500 text-white font-semibold rounded-xl text-sm hover:from-yellow-500 hover:to-orange-600 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {generatingCover ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />
-                      {coverPipelineStep === 'prompt' ? 'Creating prompt...' :
-                       coverPipelineStep === 'image' ? 'Generating image...' :
-                       coverPipelineStep === 'seo' ? 'Writing SEO...' :
-                       coverPipelineStep === 'push' ? 'Uploading to WP...' : 'Processing...'}
-                    </>
-                  ) : (
-                    <>
-                      <Wand2 size={16} />
-                      Generate Cover
-                    </>
-                  )}
-                </button>
-              </div>
-            ) : (
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                <ImageIcon size={48} className="mx-auto text-gray-400 mb-3" />
-                <p className="text-sm text-gray-600 mb-2">Upload featured image</p>
-                <button className="text-sm text-indigo-600 hover:text-indigo-700 font-medium">
-                  Choose file
-                </button>
               </div>
             )}
           </div>

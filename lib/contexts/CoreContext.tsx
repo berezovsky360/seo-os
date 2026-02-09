@@ -52,11 +52,7 @@ const CoreContext = createContext<CoreContextType | undefined>(undefined)
 // ====== Module sidebar definitions (static, from registry) ======
 
 const MODULE_SIDEBAR_MAP: Record<string, { section: string; sectionColor: string; label: string; viewState: string; order: number }> = {
-  'rankmath-bridge': { section: 'WordPress', sectionColor: 'bg-blue-500', label: 'RankMath Bridge', viewState: 'rankmath-bridge', order: 1 },
-  'rank-pulse': { section: 'Monitoring', sectionColor: 'bg-orange-500', label: 'Rank Pulse', viewState: 'rank-pulse', order: 1 },
-  'gemini-architect': { section: 'SEO Tools', sectionColor: 'bg-emerald-500', label: 'AI Architect', viewState: 'gemini-architect', order: 1 },
-  'gsc-insights': { section: 'Monitoring', sectionColor: 'bg-orange-500', label: 'GSC Insights', viewState: 'gsc-insights', order: 2 },
-  'nana-banana': { section: 'Content', sectionColor: 'bg-yellow-500', label: 'Nana Banana', viewState: 'nana-banana', order: 1 },
+  // Modules are accessed via Marketplace — no sidebar entries
 }
 
 export function CoreProvider({ children }: { children: ReactNode }) {
