@@ -13,12 +13,14 @@ import { RankMathBridgeModule } from '@/lib/modules/rankmath-bridge'
 import { RankPulseModule } from '@/lib/modules/rank-pulse'
 import { GeminiArchitectModule } from '@/lib/modules/gemini-architect'
 import { GSCInsightsModule } from '@/lib/modules/gsc-insights'
+import { NanaBananaModule } from '@/lib/modules/nana-banana'
 
 export const MODULE_REGISTRY: Record<string, SEOModule> = {
   'rankmath-bridge': new RankMathBridgeModule(),
   'rank-pulse': new RankPulseModule(),
   'gemini-architect': new GeminiArchitectModule(),
   'gsc-insights': new GSCInsightsModule(),
+  'nana-banana': new NanaBananaModule(),
 }
 
 /**

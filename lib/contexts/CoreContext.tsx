@@ -56,6 +56,7 @@ const MODULE_SIDEBAR_MAP: Record<string, { section: string; sectionColor: string
   'rank-pulse': { section: 'Monitoring', sectionColor: 'bg-orange-500', label: 'Rank Pulse', viewState: 'rank-pulse', order: 1 },
   'gemini-architect': { section: 'SEO Tools', sectionColor: 'bg-emerald-500', label: 'AI Architect', viewState: 'gemini-architect', order: 1 },
   'gsc-insights': { section: 'Monitoring', sectionColor: 'bg-orange-500', label: 'GSC Insights', viewState: 'gsc-insights', order: 2 },
+  'nana-banana': { section: 'Content', sectionColor: 'bg-yellow-500', label: 'Nana Banana', viewState: 'nana-banana', order: 1 },
 }
 
 export function CoreProvider({ children }: { children: ReactNode }) {

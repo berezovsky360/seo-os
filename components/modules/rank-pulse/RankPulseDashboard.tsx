@@ -12,6 +12,7 @@ import {
   Loader2,
   Search,
   ChevronDown,
+  ChevronLeft,
   Camera,
   X,
 } from 'lucide-react';
@@ -84,7 +85,7 @@ function positionChange(
 
 // ====== Component ======
 
-export default function RankPulseDashboard() {
+export default function RankPulseDashboard({ onBack }: { onBack?: () => void } = {}) {
   // --- State ---
   const [selectedSiteId, setSelectedSiteId] = useState<string>('');
   const [selectedKeywordId, setSelectedKeywordId] = useState<string | null>(null);
@@ -240,6 +241,18 @@ export default function RankPulseDashboard() {
       {/* ===== Header ===== */}
       <div className="flex justify-between items-center px-8 py-5 bg-[#F5F6F8] border-b border-gray-200 sticky top-0 z-10">
         <div className="flex items-center gap-3">
+          {onBack && (
+            <>
+              <button
+                onClick={onBack}
+                className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm"
+              >
+                <ChevronLeft size={14} />
+                Back
+              </button>
+              <div className="h-4 w-px bg-gray-300" />
+            </>
+          )}
           <BarChart3 size={20} className="text-gray-900" />
           <h1 className="text-lg font-bold text-gray-900">Rank Pulse</h1>
         </div>

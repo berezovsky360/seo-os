@@ -17,17 +17,24 @@ import { useQueryClient } from '@tanstack/react-query';
 
 // --- Shared Components matching KeywordResearch Style ---
 
-const PageHeader = ({ title }: { title: string }) => (
-    <div className="flex justify-between items-center px-8 py-5 bg-[#F5F6F8] z-10">
-        <div className="flex items-center gap-4">
-            <button className="flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm">
-                <ChevronLeft size={16} />
-                Back
-            </button>
-            <div className="h-4 w-px bg-gray-300"></div>
+const PageHeader = ({ title, onBack }: { title: string; onBack?: () => void }) => (
+    <div className="flex justify-between items-center px-4 sm:px-8 py-5 bg-[#F5F6F8] z-10">
+        <div className="flex items-center gap-3 sm:gap-4">
+            {onBack && (
+                <>
+                    <button
+                        onClick={onBack}
+                        className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm"
+                    >
+                        <ChevronLeft size={14} />
+                        Back
+                    </button>
+                    <div className="h-4 w-px bg-gray-300"></div>
+                </>
+            )}
             <h1 className="text-lg font-bold text-gray-900">{title}</h1>
         </div>
-        
+
         <div className="flex items-center gap-4">
              <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 shadow-sm transition-all">
                 <Download size={16} />
@@ -76,10 +83,10 @@ const FloatingSearchBar = ({ placeholder = "Ask anything..." }: { placeholder?: 
 );
 
 // --- 1.1 Main Keywords View ---
-export const MainKeywordsView: React.FC = () => {
+export const MainKeywordsView: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     return (
         <div className="h-full flex flex-col bg-[#F5F6F8] relative font-sans">
-            <PageHeader title="Main Keywords" />
+            <PageHeader title="Main Keywords" onBack={onBack} />
             
             <div className="flex-1 overflow-y-auto px-8 pb-32">
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
@@ -147,7 +154,7 @@ export const MainKeywordsView: React.FC = () => {
 };
 
 // --- 3.1 Article Production View (All Sites) ---
-export const ArticleProductionView: React.FC = () => {
+export const ArticleProductionView: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     const { data: articles = [], isLoading } = useAllArticles();
     const { data: sites = [] } = useSites();
     const createArticle = useCreateArticle();
@@ -318,7 +325,7 @@ export const ArticleProductionView: React.FC = () => {
 
     return (
         <div className="h-full flex flex-col bg-[#F5F6F8] relative font-sans">
-            <PageHeader title="Content" />
+            <PageHeader title="Content" onBack={onBack} />
 
             <div className="flex-1 overflow-y-auto px-8 pb-32">
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
@@ -619,7 +626,7 @@ export const ArticleProductionView: React.FC = () => {
 };
 
 // --- 4.0 Finished Articles View ---
-export const FinishedArticlesView: React.FC = () => {
+export const FinishedArticlesView: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     const { data: allArticles = [], isLoading } = useAllArticles();
     const publishedArticles = allArticles.filter((a: any) => a.status === 'published');
     const [viewingArticle, setViewingArticle] = useState<any>(null);
@@ -652,7 +659,7 @@ export const FinishedArticlesView: React.FC = () => {
 
     return (
         <div className="h-full flex flex-col bg-[#F5F6F8] relative font-sans">
-            <PageHeader title="Published Articles" />
+            <PageHeader title="Published Articles" onBack={onBack} />
 
             <div className="flex-1 overflow-y-auto px-8 pb-32">
                 {isLoading ? (
@@ -739,7 +746,7 @@ export const FinishedArticlesView: React.FC = () => {
 }
 
 // --- 5.1 LLM Tracker View ---
-export const LLMTrackerView: React.FC = () => {
+export const LLMTrackerView: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     const getPill = (status: 'positive' | 'negative' | 'neutral') => {
         if (status === 'positive') return <span className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg text-xs font-bold border border-emerald-100">Positive</span>
         if (status === 'negative') return <span className="bg-rose-50 text-rose-700 px-3 py-1 rounded-lg text-xs font-bold border border-rose-100">Negative</span>
@@ -748,7 +755,7 @@ export const LLMTrackerView: React.FC = () => {
 
     return (
         <div className="h-full flex flex-col bg-[#F5F6F8] relative font-sans">
-            <PageHeader title="LLM Search Result Tracker" />
+            <PageHeader title="LLM Search Result Tracker" onBack={onBack} />
 
             <div className="flex-1 overflow-y-auto px-8 pb-32">
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">

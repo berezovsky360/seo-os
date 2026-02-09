@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   ChevronLeft, ChevronRight, Search, Plus,
-  Calendar as CalendarIcon, CirclePlus
+  Calendar as CalendarIcon, CirclePlus,
 } from 'lucide-react';
 
 // ====== Types ======
@@ -168,7 +168,7 @@ function MobilePostCard({ post }: { post: CalendarPost }) {
 
 // ====== Main Component ======
 
-export default function ContentCalendar() {
+export default function ContentCalendar({ onBack }: { onBack?: () => void }) {
   const [currentMonth, setCurrentMonth] = useState(new Date(y, m, 1));
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -219,6 +219,18 @@ export default function ContentCalendar() {
         {/* Top row: title + actions */}
         <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center gap-3">
+            {onBack && (
+              <>
+                <button
+                  onClick={onBack}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm"
+                >
+                  <ChevronLeft size={14} />
+                  Back
+                </button>
+                <div className="h-4 w-px bg-gray-300" />
+              </>
+            )}
             <CalendarIcon size={22} className="text-indigo-600 hidden sm:block" />
             <h1 className="text-lg sm:text-xl font-bold text-gray-900">Content Calendar</h1>
           </div>

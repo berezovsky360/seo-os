@@ -16,10 +16,11 @@ import BulkMetadataPush from '@/components/modules/rankmath-bridge/BulkMetadataP
 import RecipeList from '@/components/modules/recipes/RecipeList';
 import RankPulseDashboard from '@/components/modules/rank-pulse/RankPulseDashboard';
 import GSCDashboard from '@/components/modules/gsc-insights/GSCDashboard';
+import NanaBananaDashboard from '@/components/modules/nana-banana/NanaBananaDashboard';
 import ContentCalendar from '@/components/ContentCalendar';
 import { MOCK_SITES } from '@/constants';
 import { ViewState, Site, UserRole } from '@/types';
-import { Menu, Search, ChevronLeft } from 'lucide-react';
+import { Menu, Search } from 'lucide-react';
 import { useSites, useDeleteSite } from '@/hooks/useSites';
 import { usePreferences } from '@/hooks/useEvents';
 
@@ -41,6 +42,7 @@ const VIEW_TITLES: Partial<Record<ViewState, string>> = {
   recipes: 'Recipes',
   'rank-pulse': 'Rank Pulse',
   'gsc-insights': 'GSC Insights',
+  'nana-banana': 'Nana Banana',
 };
 
 // ====== URL helpers ======
@@ -146,41 +148,40 @@ export default function Home() {
           />
         );
       case 'calendar':
-        return <ContentCalendar />;
+        return <ContentCalendar onBack={goBack} />;
       case 'keywords-main':
-        return <MainKeywordsView />;
+        return <MainKeywordsView onBack={goBack} />;
       case 'production':
-        return <ArticleProductionView />;
+        return <ArticleProductionView onBack={goBack} />;
       case 'finished':
-        return <FinishedArticlesView />;
+        return <FinishedArticlesView onBack={goBack} />;
       case 'llm-tracker':
-        return <LLMTrackerView />;
+        return <LLMTrackerView onBack={goBack} />;
       case 'keywords-db':
-        return <KeywordResearch userRole={userRole} />;
+        return <KeywordResearch userRole={userRole} onBack={goBack} />;
       case 'authors':
-        return <AuthorRotator userRole={userRole} />;
+        return <AuthorRotator userRole={userRole} onBack={goBack} />;
       case 'marketplace':
         return <Marketplace onBack={goBack} />;
       case 'key-management':
-        return <KeyManagement />;
+        return <KeyManagement onBack={goBack} />;
       case 'event-log':
-        return <EventLog />;
+        return <EventLog onBack={goBack} />;
       case 'bulk-metadata':
       case 'rankmath-bridge':
-        return <BulkMetadataPush />;
+        return <BulkMetadataPush onBack={goBack} />;
       case 'recipes':
-        return <RecipeList />;
+        return <RecipeList onBack={goBack} />;
       case 'rank-pulse':
-        return <RankPulseDashboard />;
+        return <RankPulseDashboard onBack={goBack} />;
       case 'gsc-insights':
-        return <GSCDashboard />;
+        return <GSCDashboard onBack={goBack} />;
+      case 'nana-banana':
+        return <NanaBananaDashboard onBack={goBack} />;
       default:
         return dashboardView;
     }
   };
-
-  // Show back bar for all views except dashboard and site-details (which has its own)
-  const showBackBar = currentView !== 'dashboard' && currentView !== 'site-details';
 
   return (
     <div className="flex h-screen w-screen bg-[#F5F5F7] font-sans text-gray-900 overflow-hidden selection:bg-indigo-500/20 selection:text-indigo-900">
@@ -209,19 +210,6 @@ export default function Home() {
             <Search size={18} />
           </button>
         </div>
-
-        {/* Back bar */}
-        {showBackBar && (
-          <div className="flex items-center px-4 sm:px-6 lg:px-8 py-2.5 bg-[#F5F6F8] border-b border-gray-200 flex-shrink-0 z-10">
-            <button
-              onClick={goBack}
-              className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-2.5 sm:px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm"
-            >
-              <ChevronLeft size={14} />
-              Back
-            </button>
-          </div>
-        )}
 
         <div className="flex-1 overflow-hidden relative h-full">
           {renderView()}

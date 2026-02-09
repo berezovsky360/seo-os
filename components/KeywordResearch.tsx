@@ -8,9 +8,10 @@ import {
 
 interface KeywordResearchProps {
     userRole: UserRole;
+    onBack?: () => void;
 }
 
-const KeywordResearch: React.FC<KeywordResearchProps> = ({ userRole }) => {
+const KeywordResearch: React.FC<KeywordResearchProps> = ({ userRole, onBack }) => {
   const [searchTerm, setSearchTerm] = useState('truck accident lawyer las vegas');
   
   // Helper to extract a "Term" for the first column (simulating the grouped view)
@@ -64,12 +65,19 @@ const KeywordResearch: React.FC<KeywordResearchProps> = ({ userRole }) => {
       
       {/* Header */}
       <div className="flex justify-between items-center px-8 py-5 bg-[#F5F6F8] z-10">
-        <div className="flex items-center gap-4">
-            <button className="flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm">
-                <ChevronLeft size={16} />
-                Back
-            </button>
-            <div className="h-4 w-px bg-gray-300"></div>
+        <div className="flex items-center gap-3 sm:gap-4">
+            {onBack && (
+                <>
+                    <button
+                        onClick={onBack}
+                        className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm"
+                    >
+                        <ChevronLeft size={14} />
+                        Back
+                    </button>
+                    <div className="h-4 w-px bg-gray-300"></div>
+                </>
+            )}
             <h1 className="text-lg font-bold text-gray-900">Keyword Research</h1>
         </div>
         

@@ -25,6 +25,7 @@ const SECTION_COLOR_MAP: Record<string, { dot: string; text: string }> = {
   'bg-orange-500': { dot: 'bg-orange-500', text: 'text-orange-600' },
   'bg-emerald-500': { dot: 'bg-emerald-500', text: 'text-emerald-600' },
   'bg-purple-500': { dot: 'bg-purple-500', text: 'text-purple-600' },
+  'bg-yellow-500': { dot: 'bg-yellow-500', text: 'text-yellow-600' },
 };
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, setUserRole, isOpen, onClose }) => {
@@ -55,7 +56,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
 
   // Core views for the icon rail "active" check
   const coreViews = ['marketplace', 'key-management', 'event-log', 'recipes', 'settings'] as const;
-  const moduleViews = ['rank-pulse', 'gemini-architect', 'rankmath-bridge', 'gsc-insights', 'bulk-metadata'] as const;
+  const moduleViews = ['rank-pulse', 'gemini-architect', 'rankmath-bridge', 'gsc-insights', 'bulk-metadata', 'nana-banana'] as const;
 
   return (
     <>

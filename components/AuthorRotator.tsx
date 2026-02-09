@@ -5,19 +5,27 @@ import { Shuffle, Sparkles, User, Settings, Edit, CheckCircle2, ChevronLeft, Dow
 
 interface AuthorRotatorProps {
     userRole: UserRole;
+    onBack?: () => void;
 }
 
-const PageHeader = ({ title }: { title: string }) => (
-    <div className="flex justify-between items-center px-8 py-5 bg-[#F5F6F8] z-10 sticky top-0">
-        <div className="flex items-center gap-4">
-            <button className="flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm">
-                <ChevronLeft size={16} />
-                Back
-            </button>
-            <div className="h-4 w-px bg-gray-300"></div>
+const PageHeader = ({ title, onBack }: { title: string; onBack?: () => void }) => (
+    <div className="flex justify-between items-center px-4 sm:px-8 py-5 bg-[#F5F6F8] z-10 sticky top-0">
+        <div className="flex items-center gap-3 sm:gap-4">
+            {onBack && (
+                <>
+                    <button
+                        onClick={onBack}
+                        className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm"
+                    >
+                        <ChevronLeft size={14} />
+                        Back
+                    </button>
+                    <div className="h-4 w-px bg-gray-300"></div>
+                </>
+            )}
             <h1 className="text-lg font-bold text-gray-900">{title}</h1>
         </div>
-        
+
         <div className="flex items-center gap-4">
              <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 shadow-sm transition-all">
                 <Download size={16} />
@@ -61,7 +69,7 @@ const FloatingSearchBar = () => (
     </div>
 );
 
-const AuthorRotator: React.FC<AuthorRotatorProps> = ({ userRole }) => {
+const AuthorRotator: React.FC<AuthorRotatorProps> = ({ userRole, onBack }) => {
     const [hoveredAuthor, setHoveredAuthor] = useState<string | null>(null);
     const [activeAuthorId, setActiveAuthorId] = useState<string>('1');
 
@@ -69,7 +77,7 @@ const AuthorRotator: React.FC<AuthorRotatorProps> = ({ userRole }) => {
 
     return (
         <div className="h-full flex flex-col bg-[#F5F6F8] relative font-sans">
-            <PageHeader title="Personas" />
+            <PageHeader title="Personas" onBack={onBack} />
 
             <div className="flex-1 overflow-y-auto px-8 pb-32">
                 <div className="mb-6 flex items-center justify-between">

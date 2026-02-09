@@ -16,6 +16,7 @@ import {
   Eye,
   Target,
   ArrowUpRight,
+  ChevronLeft,
 } from 'lucide-react';
 import {
   useGSCAnalytics,
@@ -164,7 +165,7 @@ function ChartTooltip({ active, payload, label }: any) {
 type DateRange = '7d' | '30d' | '90d';
 type TabId = 'queries' | 'pages' | 'low-ctr' | 'new-keywords';
 
-export default function GSCDashboard() {
+export default function GSCDashboard({ onBack }: { onBack?: () => void } = {}) {
   // ---- State ---------------------------------------------------------------
   const [selectedSiteId, setSelectedSiteId] = useState<string>('');
   const [dateRange, setDateRange] = useState<DateRange>('30d');
@@ -402,6 +403,18 @@ export default function GSCDashboard() {
       <div className="sticky top-0 z-10 bg-[#F5F6F8] pb-4 pt-2 -mx-1 px-1">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
+            {onBack && (
+              <>
+                <button
+                  onClick={onBack}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm"
+                >
+                  <ChevronLeft size={14} />
+                  Back
+                </button>
+                <div className="h-4 w-px bg-gray-300" />
+              </>
+            )}
             <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-indigo-100">
               <LineChart className="h-5 w-5 text-indigo-600" />
             </div>

@@ -14,6 +14,7 @@ export type ModuleId =
   | 'gemini-architect'
   | 'rankmath-bridge'
   | 'gsc-insights'
+  | 'nana-banana'
 
 // ====== API Key Types ======
 
@@ -50,6 +51,13 @@ export type EventType =
   | 'gsc.low_ctr_found'
   | 'gsc.impressions_spike'
   | 'gsc.keyword_discovered'
+  // Nana Banana events (AI image generation)
+  | 'banana.prompt_generated'
+  | 'banana.image_generated'
+  | 'banana.seo_description_ready'
+  | 'banana.image_pushed_to_wp'
+  | 'banana.pipeline_completed'
+  | 'banana.pipeline_failed'
 
 // ====== Event Severity ======
 

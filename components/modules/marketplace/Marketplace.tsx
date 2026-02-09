@@ -2,8 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import {
-  Globe, Sparkles, Search, BarChart3,
-  Loader2, AlertCircle
+  Globe, Sparkles, Search, BarChart3, Image as ImageIcon,
+  Loader2, AlertCircle, ChevronLeft, Store
 } from 'lucide-react';
 import { useCore } from '@/lib/contexts/CoreContext';
 import { useToggleModule } from '@/hooks/useModules';
@@ -54,6 +54,15 @@ const MODULE_CARDS: {
     icon: <Search size={20} />,
     gradient: 'from-purple-500 to-indigo-600',
     requiredKeys: ['gsc'],
+    status: 'ready',
+  },
+  {
+    id: 'nana-banana',
+    name: 'Nana Banana',
+    description: 'AI featured image generation and SEO optimization.',
+    icon: <ImageIcon size={20} />,
+    gradient: 'from-yellow-400 to-orange-500',
+    requiredKeys: ['gemini'],
     status: 'ready',
   },
 ];
@@ -140,6 +149,26 @@ export default function Marketplace({ onBack }: MarketplaceProps) {
 
   return (
     <div className="h-full overflow-y-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 py-5 bg-[#F5F6F8] border-b border-gray-200 sticky top-0 z-10">
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <>
+              <button
+                onClick={onBack}
+                className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm"
+              >
+                <ChevronLeft size={14} />
+                Back
+              </button>
+              <div className="h-4 w-px bg-gray-300" />
+            </>
+          )}
+          <Store size={20} className="text-gray-900" />
+          <h1 className="text-lg font-bold text-gray-900">Marketplace</h1>
+        </div>
+      </div>
+
       <div className="p-4 sm:p-6 lg:p-8">
         {/* Search */}
         <div className="mb-6">

@@ -2,9 +2,9 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import {
-  Search, Filter, Download, ChevronDown,
+  Search, Filter, Download, ChevronDown, ChevronLeft,
   Loader2, CheckCircle2, AlertCircle, Lock,
-  RefreshCw, Upload, FileEdit
+  RefreshCw, Upload, FileEdit, Globe,
 } from 'lucide-react';
 import { useSites } from '@/hooks/useSites';
 import { useToast } from '@/lib/contexts/ToastContext';
@@ -325,13 +325,21 @@ export default function BulkMetadataPush({ onBack }: BulkMetadataPushProps) {
       {/* Header */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200">
         <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 py-4">
-          <div>
-            <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-1">
-              <span>SEO OS</span>
-              <span>›</span>
-              <span className="text-gray-600">Bulk Meta Editor</span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Bulk Meta Editor</h1>
+          <div className="flex items-center gap-3">
+            {onBack && (
+              <>
+                <button
+                  onClick={onBack}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm"
+                >
+                  <ChevronLeft size={14} />
+                  Back
+                </button>
+                <div className="h-4 w-px bg-gray-300" />
+              </>
+            )}
+            <Globe size={20} className="text-indigo-600 hidden sm:block" />
+            <h1 className="text-lg sm:text-xl font-bold text-gray-900">Bulk Meta Editor</h1>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">

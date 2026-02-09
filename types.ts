@@ -97,7 +97,8 @@ export type ViewState =
     | 'gemini-architect'
     | 'rankmath-bridge'
     | 'gsc-insights'
-    | 'bulk-metadata';
+    | 'bulk-metadata'
+    | 'nana-banana';
 
 export interface Article {
     id: string;

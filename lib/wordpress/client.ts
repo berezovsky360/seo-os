@@ -829,6 +829,77 @@ export class WordPressClient {
   }
 
   /**
+   * Upload an image to WordPress Media Library
+   */
+  async uploadMedia(params: {
+    imageBuffer: Buffer
+    filename: string
+    mimeType: string
+    altText?: string
+    caption?: string
+    title?: string
+  }): Promise<{ id: number; source_url: string; media_details: any }> {
+    const { imageBuffer, filename, mimeType, altText, caption, title } = params
+
+    const uploadResponse = await fetch(`${this.baseUrl}/media`, {
+      method: 'POST',
+      headers: {
+        'Authorization': this.auth,
+        'Content-Type': mimeType,
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+      body: new Uint8Array(imageBuffer),
+    })
+
+    if (!uploadResponse.ok) {
+      const error = await uploadResponse.json().catch(() => ({}))
+      throw new Error(error.message || `Failed to upload media: ${uploadResponse.statusText}`)
+    }
+
+    const media = await uploadResponse.json()
+
+    if (altText || caption || title) {
+      await fetch(`${this.baseUrl}/media/${media.id}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': this.auth,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          alt_text: altText || '',
+          caption: caption || '',
+          title: title || media.title?.raw || filename,
+        }),
+      })
+    }
+
+    return {
+      id: media.id,
+      source_url: media.source_url,
+      media_details: media.media_details,
+    }
+  }
+
+  /**
+   * Set a media item as the featured image of a post
+   */
+  async setFeaturedImage(postId: number, mediaId: number): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/posts/${postId}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': this.auth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ featured_media: mediaId }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.message || `Failed to set featured image: ${response.statusText}`)
+    }
+  }
+
+  /**
    * Safely parse JSON string, return null if invalid
    */
   private safeJSONParse(str: string): any {
