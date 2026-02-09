@@ -117,6 +117,30 @@ export default function ArticleEditor({
   const [generatedCoverUrl, setGeneratedCoverUrl] = useState<string | null>(article.og_image_url || null)
   const [coverPipelineStep, setCoverPipelineStep] = useState<string>('idle')
   const featuredImageInputRef = useRef<HTMLInputElement>(null)
+  const inlineImageInputRef = useRef<HTMLInputElement>(null)
+
+  const handleInlineImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      if (editorMode === 'visual') {
+        document.execCommand('insertImage', false, dataUrl)
+        const editor = document.getElementById('visual-editor')
+        if (editor) updateField('content', editor.innerHTML)
+      } else {
+        const textarea = document.getElementById('article-content') as HTMLTextAreaElement
+        if (!textarea) return
+        const pos = textarea.selectionStart
+        const current = article.content || ''
+        const imgTag = `<img src="${dataUrl}" alt="" />`
+        updateField('content', current.substring(0, pos) + imgTag + current.substring(pos))
+      }
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
 
   const handleFeaturedImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -245,6 +269,9 @@ export default function ArticleEditor({
             range.surroundContents(code)
           }
           break
+        case 'image':
+          inlineImageInputRef.current?.click()
+          return // Don't sync yet — handled in upload callback
       }
       // Sync contentEditable HTML back to state
       const editor = document.getElementById('visual-editor')
@@ -283,6 +310,9 @@ export default function ArticleEditor({
       case 'code':
         formattedText = `<code>${selectedText}</code>`
         break
+      case 'image':
+        inlineImageInputRef.current?.click()
+        return
       default:
         return
     }
@@ -592,14 +622,14 @@ export default function ArticleEditor({
               </div>
               <div className="w-px h-6 bg-gray-300 mx-1" />
               <button
-                onClick={() => formatText('bold')}
+                onMouseDown={(e) => { e.preventDefault(); formatText('bold') }}
                 className="p-2 hover:bg-white rounded transition-colors"
                 title="Bold"
               >
                 <Bold size={18} />
               </button>
               <button
-                onClick={() => formatText('italic')}
+                onMouseDown={(e) => { e.preventDefault(); formatText('italic') }}
                 className="p-2 hover:bg-white rounded transition-colors"
                 title="Italic"
               >
@@ -607,14 +637,14 @@ export default function ArticleEditor({
               </button>
               <div className="w-px h-6 bg-gray-300 mx-1" />
               <button
-                onClick={() => formatText('list')}
+                onMouseDown={(e) => { e.preventDefault(); formatText('list') }}
                 className="p-2 hover:bg-white rounded transition-colors"
                 title="List"
               >
                 <List size={18} />
               </button>
               <button
-                onClick={() => formatText('quote')}
+                onMouseDown={(e) => { e.preventDefault(); formatText('quote') }}
                 className="p-2 hover:bg-white rounded transition-colors"
                 title="Quote"
               >
@@ -622,23 +652,36 @@ export default function ArticleEditor({
               </button>
               <div className="w-px h-6 bg-gray-300 mx-1" />
               <button
-                onClick={() => formatText('link')}
+                onMouseDown={(e) => { e.preventDefault(); formatText('link') }}
                 className="p-2 hover:bg-white rounded transition-colors"
                 title="Link"
               >
                 <Link2 size={18} />
               </button>
               <button
-                onClick={() => formatText('code')}
+                onMouseDown={(e) => { e.preventDefault(); formatText('code') }}
                 className="p-2 hover:bg-white rounded transition-colors"
                 title="Code"
               >
                 <Code size={18} />
               </button>
-              <button className="p-2 hover:bg-white rounded transition-colors" title="Image">
+              <button
+                onMouseDown={(e) => { e.preventDefault(); formatText('image') }}
+                className="p-2 hover:bg-white rounded transition-colors"
+                title="Insert Image"
+              >
                 <ImageIcon size={18} />
               </button>
             </div>
+
+            {/* Hidden file input for inline image insertion */}
+            <input
+              ref={inlineImageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleInlineImageUpload}
+            />
 
             {/* Title Input */}
             <div className="mb-6">
