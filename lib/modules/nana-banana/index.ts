@@ -74,6 +74,15 @@ export class NanaBananaModule implements SEOModule {
         { name: 'aspect_ratio', type: 'select', label: 'Aspect Ratio', required: false, default: '16:9' },
       ],
     },
+    {
+      id: 'analyze_style',
+      name: 'Analyze Cover Style',
+      description: 'Analyze a reference image and generate a reusable style description',
+      params: [
+        { name: 'site_id', type: 'string', label: 'Site ID', required: true },
+        { name: 'image_base64', type: 'string', label: 'Reference Image (base64)', required: true },
+      ],
+    },
   ]
 
   requiredKeys: ApiKeyType[] = ['gemini']
@@ -106,6 +115,8 @@ export class NanaBananaModule implements SEOModule {
         return this.pushToWordPress(params, context)
       case 'run_full_pipeline':
         return this.runFullPipeline(params, context)
+      case 'analyze_style':
+        return this.analyzeStyle(params, context)
       default:
         throw new Error(`Unknown action: ${actionId}`)
     }
@@ -129,6 +140,13 @@ export class NanaBananaModule implements SEOModule {
 
     if (!post) throw new Error('Post not found')
 
+    // Fetch site's cover style reference (if set)
+    const { data: siteStyle } = await context.supabase
+      .from('sites')
+      .select('cover_style_prompt')
+      .eq('id', site_id)
+      .single()
+
     const geminiKey = context.apiKeys['gemini']
     if (!geminiKey) throw new Error('Gemini API key not configured')
 
@@ -137,6 +155,10 @@ export class NanaBananaModule implements SEOModule {
 
     const plainContent = (post.content || '').replace(/<[^>]*>/g, '')
     const truncated = plainContent.substring(0, 4000)
+
+    const styleInstruction = siteStyle?.cover_style_prompt
+      ? `\n\nIMPORTANT — Match this visual style exactly:\n${siteStyle.cover_style_prompt}\n\nThe generated prompt MUST incorporate these style elements while depicting the article's topic.`
+      : ''
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-preview-05-20',
@@ -153,7 +175,7 @@ Generate a single, detailed prompt for an AI image generator (Imagen) that would
 2. Be relevant to the article topic
 3. Work well as a blog featured image
 4. Avoid text/words in the image
-5. Use a photorealistic or professional illustration style
+5. Use a photorealistic or professional illustration style${styleInstruction}
 
 Return ONLY the image generation prompt, nothing else.`,
     })
@@ -389,5 +411,58 @@ Return ONLY valid JSON in this format:
       })
       throw error
     }
+  }
+
+  private async analyzeStyle(
+    params: Record<string, any>,
+    context: ModuleContext
+  ): Promise<Record<string, any>> {
+    const { site_id, image_base64 } = params
+    if (!site_id || !image_base64) throw new Error('site_id and image_base64 are required')
+
+    const geminiKey = context.apiKeys['gemini']
+    if (!geminiKey) throw new Error('Gemini API key not configured')
+
+    const { GoogleGenAI } = await import('@google/genai')
+    const ai = new GoogleGenAI({ apiKey: geminiKey })
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-preview-05-20',
+      contents: [
+        {
+          inlineData: {
+            mimeType: 'image/png',
+            data: image_base64,
+          },
+        },
+        {
+          text: `You are an art director analyzing a reference image for consistent brand imagery.
+
+Analyze this image and describe its visual style in detail so that an AI image generator can recreate similar images on different topics. Cover:
+
+1. **Art style** (e.g., flat illustration, 3D render, watercolor, photorealistic, minimalist vector, isometric, etc.)
+2. **Color palette** (dominant colors, accent colors, overall tone — warm/cool/neutral)
+3. **Composition** (layout, perspective, depth of field, framing)
+4. **Lighting** (soft/hard, direction, shadows, highlights)
+5. **Mood & atmosphere** (professional, playful, dramatic, calm, etc.)
+6. **Textures & details** (smooth gradients, grainy, paper texture, glossy, matte)
+7. **Distinctive elements** (any recurring visual motifs, border styles, overlays)
+
+Write a concise style description (200-400 words) that can be appended to any image generation prompt to achieve this same look. Write it as direct instructions, e.g., "Use flat vector illustration style with..."
+
+Return ONLY the style description, no preamble or explanation.`,
+        },
+      ],
+    })
+
+    const stylePrompt = response.text?.trim() || ''
+
+    // Save to sites table
+    await context.supabase
+      .from('sites')
+      .update({ cover_style_prompt: stylePrompt })
+      .eq('id', site_id)
+
+    return { style_prompt: stylePrompt }
   }
 }

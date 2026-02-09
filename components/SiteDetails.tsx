@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Site } from '../types';
 import { ArticleRecord } from '@/lib/services/articleService';
-import { ChevronLeft, ChevronRight, Settings, FileText, Tag, Folder, Save, CheckCircle2, MoreHorizontal, Filter, Search, Globe, AlertTriangle, Monitor, Smartphone, TrendingUp, BarChart3, AlertCircle, Calendar, ChevronDown, Plus, Wifi, Trash2, Edit, Eye, GripVertical, Settings2, TrendingDown, X, Loader2, RefreshCw, Download, Puzzle, ExternalLink, Link2, Image as ImageIcon, BookOpen, Shield, Hash, Upload, RefreshCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Settings, FileText, Tag, Folder, Save, CheckCircle2, MoreHorizontal, Filter, Search, Globe, AlertTriangle, Monitor, Smartphone, TrendingUp, BarChart3, AlertCircle, Calendar, ChevronDown, Plus, Wifi, Trash2, Edit, Eye, GripVertical, Settings2, TrendingDown, X, Loader2, RefreshCw, Download, Puzzle, ExternalLink, Link2, Image as ImageIcon, BookOpen, Shield, Hash, Upload, RefreshCcw, Wand2, Sparkles, Palette } from 'lucide-react';
 import { useSite, useUpdateSite, useDeleteSite } from '@/hooks/useSites';
 import { useArticles, useCreateArticle, usePublishArticleToWordPress } from '@/hooks/useArticles';
 import { useSyncPosts, usePosts } from '@/hooks/usePosts';
 import { useToast } from '@/lib/contexts/ToastContext';
+import { useCore } from '@/lib/contexts/CoreContext';
 import { useQueryClient } from '@tanstack/react-query';
 import PublishModal from './PublishModal';
 import ArticleEditor from './ArticleEditor';
@@ -86,6 +87,18 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
     const createArticle = useCreateArticle();
     const queryClient = useQueryClient();
     const toast = useToast();
+    const { isModuleEnabled } = useCore();
+    const nanaBananaEnabled = isModuleEnabled('nana-banana');
+
+    // Cover Style State
+    const [coverStylePrompt, setCoverStylePrompt] = useState('');
+    const [coverReferenceUrl, setCoverReferenceUrl] = useState('');
+    const [isAnalyzingStyle, setIsAnalyzingStyle] = useState(false);
+    const [styleImageFile, setStyleImageFile] = useState<File | null>(null);
+    const [styleImagePreview, setStyleImagePreview] = useState<string | null>(null);
+
+    // Cover generation in content table
+    const [generatingCoverId, setGeneratingCoverId] = useState<string | null>(null);
 
     // New Article Dialog State
     const [showNewArticleDialog, setShowNewArticleDialog] = useState(false);
@@ -241,6 +254,53 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
         setBulkProcessing(false);
     };
 
+    const handleGenerateCover = async (itemId: string) => {
+        setGeneratingCoverId(itemId);
+        try {
+            const res = await fetch('/api/nana-banana/pipeline', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ site_id: siteId, post_id: itemId }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Pipeline failed');
+            toast.success('Cover generated and uploaded to WordPress!');
+            queryClient.invalidateQueries({ queryKey: ['posts'] });
+        } catch (error) {
+            toast.error(`Cover generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        } finally {
+            setGeneratingCoverId(null);
+        }
+    };
+
+    const handleBulkGenerateCovers = async () => {
+        if (selectedIds.size === 0) return;
+        const items = filteredContent.filter(item => selectedIds.has(item.id) && item.wp_post_id);
+        if (items.length === 0) {
+            toast.warning('Selected items must have a WordPress post ID');
+            return;
+        }
+        setBulkProcessing(true);
+        setBulkProgress({ current: 0, total: items.length });
+        let success = 0;
+        for (const item of items) {
+            try {
+                const res = await fetch('/api/nana-banana/pipeline', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ site_id: siteId, post_id: item.id }),
+                });
+                const data = await res.json();
+                if (data.media_url) success++;
+            } catch {}
+            setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        }
+        toast.success(`Generated covers for ${success}/${items.length} items`);
+        queryClient.invalidateQueries({ queryKey: ['posts'] });
+        setSelectedIds(new Set());
+        setBulkProcessing(false);
+    };
+
     // Column Customization State
     const [showColumnCustomizer, setShowColumnCustomizer] = useState(false);
     const [visibleColumns, setVisibleColumns] = useState<string[]>([
@@ -268,6 +328,8 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
             setWpUsername(site.wp_username || '');
             setWpAppPassword(site.wp_app_password || '');
             setIsConnected(!!(site.wp_username && site.wp_app_password));
+            setCoverStylePrompt((site as any).cover_style_prompt || '');
+            setCoverReferenceUrl((site as any).cover_reference_url || '');
         }
     }, [site]);
 
@@ -1193,6 +1255,15 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                         <Upload size={12} />
                                         Sync to WP
                                     </button>
+                                    {nanaBananaEnabled && (
+                                        <button
+                                            onClick={handleBulkGenerateCovers}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500/30 hover:bg-yellow-500/50 rounded-lg text-xs font-semibold transition-colors"
+                                        >
+                                            <Wand2 size={12} />
+                                            Generate Covers
+                                        </button>
+                                    )}
                                     <button
                                         onClick={handleBulkDelete}
                                         className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/30 hover:bg-red-500/50 rounded-lg text-xs font-semibold transition-colors"
@@ -1589,6 +1660,20 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                                 <Globe size={16} />
                                                             </a>
                                                         )}
+                                                        {nanaBananaEnabled && item.wp_post_id && (
+                                                            <button
+                                                                onClick={() => handleGenerateCover(item.id)}
+                                                                disabled={generatingCoverId === item.id}
+                                                                className="p-1.5 hover:bg-yellow-50 rounded-lg text-yellow-600 transition-colors disabled:opacity-50"
+                                                                title="Generate Cover"
+                                                            >
+                                                                {generatingCoverId === item.id ? (
+                                                                    <Loader2 size={16} className="animate-spin" />
+                                                                ) : (
+                                                                    <Wand2 size={16} />
+                                                                )}
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 ) : item.originalArticle ? (
                                                     // Generated article actions: Edit, Analyze, Publish
@@ -1619,6 +1704,20 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                                 >
                                                                     <Globe size={16} />
                                                                 </a>
+                                                            )}
+                                                            {nanaBananaEnabled && item.wp_post_id && (
+                                                                <button
+                                                                    onClick={() => handleGenerateCover(item.id)}
+                                                                    disabled={generatingCoverId === item.id}
+                                                                    className="p-1.5 hover:bg-yellow-50 rounded-lg text-yellow-600 transition-colors disabled:opacity-50"
+                                                                    title="Generate Cover"
+                                                                >
+                                                                    {generatingCoverId === item.id ? (
+                                                                        <Loader2 size={16} className="animate-spin" />
+                                                                    ) : (
+                                                                        <Wand2 size={16} />
+                                                                    )}
+                                                                </button>
                                                             )}
                                                         </div>
                                                     ) : (
@@ -1873,6 +1972,158 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                         </div>
                     </div>
                 )}
+            </div>
+            )}
+
+            {/* Cover Style — Nana Banana */}
+            {nanaBananaEnabled && isConnected && (
+            <div className="bg-white border border-yellow-200 rounded-[2rem] p-8 shadow-sm mb-6">
+                <div className="flex items-start justify-between mb-1">
+                    <div>
+                        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                            <Palette size={20} className="text-yellow-500" />
+                            Cover Style
+                        </h3>
+                        <p className="text-sm text-gray-500 mt-1">
+                            Upload a reference image to define the visual style for AI-generated covers.
+                        </p>
+                    </div>
+                    {coverReferenceUrl && (
+                        <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
+                            <CheckCircle2 size={14} />
+                            Style set
+                        </span>
+                    )}
+                </div>
+
+                <div className="mt-6 space-y-4">
+                    {/* Reference image preview */}
+                    {(styleImagePreview || coverReferenceUrl) && (
+                        <div className="relative w-full max-w-sm">
+                            <img
+                                src={styleImagePreview || coverReferenceUrl}
+                                alt="Style reference"
+                                className="w-full h-48 object-cover rounded-xl border border-gray-200"
+                            />
+                            {coverReferenceUrl && !styleImagePreview && (
+                                <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                    Current reference
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* File input */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Reference Image</label>
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                    setStyleImageFile(file);
+                                    const reader = new FileReader();
+                                    reader.onload = (ev) => setStyleImagePreview(ev.target?.result as string);
+                                    reader.readAsDataURL(file);
+                                }
+                            }}
+                            className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-yellow-50 file:text-yellow-700 hover:file:bg-yellow-100 file:cursor-pointer"
+                        />
+                    </div>
+
+                    {/* Upload & Analyze button */}
+                    <button
+                        onClick={async () => {
+                            if (!styleImageFile) {
+                                toast.warning('Select a reference image first');
+                                return;
+                            }
+                            setIsAnalyzingStyle(true);
+                            try {
+                                // Convert to base64
+                                const arrayBuffer = await styleImageFile.arrayBuffer();
+                                const base64 = btoa(
+                                    new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+                                );
+
+                                // Analyze style (the API route also saves cover_style_prompt to DB)
+                                const res = await fetch('/api/nana-banana/analyze-style', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ site_id: siteId, image_base64: base64 }),
+                                });
+                                const data = await res.json();
+                                if (!res.ok) throw new Error(data.error || 'Failed to analyze style');
+
+                                setCoverStylePrompt(data.style_prompt);
+
+                                // Save reference as data URL for preview (no WP upload needed for reference)
+                                const dataUrl = `data:${styleImageFile.type};base64,${base64}`;
+                                setCoverReferenceUrl(dataUrl);
+                                updateSite.mutate({
+                                    siteId,
+                                    updates: { cover_reference_url: dataUrl } as any,
+                                });
+
+                                setStyleImageFile(null);
+                                setStyleImagePreview(null);
+                                toast.success('Style analyzed and saved!');
+                            } catch (error) {
+                                toast.error(`Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                            } finally {
+                                setIsAnalyzingStyle(false);
+                            }
+                        }}
+                        disabled={!styleImageFile || isAnalyzingStyle}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-yellow-400 to-orange-500 text-white font-semibold rounded-xl text-sm hover:from-yellow-500 hover:to-orange-600 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isAnalyzingStyle ? (
+                            <>
+                                <Loader2 size={16} className="animate-spin" />
+                                Analyzing style...
+                            </>
+                        ) : (
+                            <>
+                                <Sparkles size={16} />
+                                Upload & Analyze Style
+                            </>
+                        )}
+                    </button>
+
+                    {/* Style prompt textarea */}
+                    {coverStylePrompt && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Style Description</label>
+                            <textarea
+                                value={coverStylePrompt}
+                                onChange={(e) => setCoverStylePrompt(e.target.value)}
+                                rows={6}
+                                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-yellow-500/20 focus:border-yellow-500 transition-all text-sm text-gray-700 leading-relaxed"
+                            />
+                            <div className="flex items-center justify-between mt-2">
+                                <p className="text-xs text-gray-400">
+                                    AI-generated description. Edit to refine the style for all future covers.
+                                </p>
+                                <button
+                                    onClick={() => {
+                                        updateSite.mutate({
+                                            siteId,
+                                            updates: { cover_style_prompt: coverStylePrompt } as any,
+                                        }, {
+                                            onSuccess: () => toast.success('Style prompt saved'),
+                                            onError: () => toast.error('Failed to save style prompt'),
+                                        });
+                                    }}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-semibold hover:bg-gray-200 transition-colors"
+                                >
+                                    <Save size={12} />
+                                    Save
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
             )}
 
@@ -2167,6 +2418,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                     onPublish={handlePublishFromEditor}
                     onAnalyze={handleAnalyzeFromEditor}
                     isWPPost={!!editingWPPostId}
+                    isNanaBananaEnabled={nanaBananaEnabled}
                 />
             )}
         </div>

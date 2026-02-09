@@ -5,7 +5,7 @@ import {
     ChevronDown, ChevronRight, LayoutGrid, List as ListIcon, Maximize2,
     ChevronLeft, Download, Bell, Sparkles, RefreshCw, MapPin,
     Plus, Tag, Edit, Eye, GripVertical, Settings2, TrendingUp, TrendingDown, Globe, FileText, Calendar, X, Loader2,
-    Trash2, Upload, RefreshCcw
+    Trash2, Upload, RefreshCcw, Wand2
 } from 'lucide-react';
 import { MOCK_KEYWORDS, MOCK_ARTICLES, MOCK_LLM_RESULTS } from '../constants';
 import ArticleDrawer from './ArticleDrawer';
@@ -14,6 +14,7 @@ import SEOScoreIndicator from './SEOScoreIndicator';
 import { useAllArticles, useCreateArticle } from '@/hooks/useArticles';
 import { useSites } from '@/hooks/useSites';
 import { useToast } from '@/lib/contexts/ToastContext';
+import { useCore } from '@/lib/contexts/CoreContext';
 import { useQueryClient } from '@tanstack/react-query';
 
 // --- Shared Components matching KeywordResearch Style ---
@@ -161,6 +162,8 @@ export const ArticleProductionView: React.FC<{ onBack?: () => void }> = ({ onBac
     const createArticle = useCreateArticle();
     const queryClient = useQueryClient();
     const toast = useToast();
+    const { isModuleEnabled } = useCore();
+    const nanaBananaEnabled = isModuleEnabled('nana-banana');
     const [editingArticle, setEditingArticle] = useState<any>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [showNewArticleDialog, setShowNewArticleDialog] = useState(false);
@@ -170,6 +173,7 @@ export const ArticleProductionView: React.FC<{ onBack?: () => void }> = ({ onBac
     const [isCreating, setIsCreating] = useState(false);
     const [publishingArticleId, setPublishingArticleId] = useState<string | null>(null);
     const [analyzingArticleId, setAnalyzingArticleId] = useState<string | null>(null);
+    const [generatingCoverId, setGeneratingCoverId] = useState<string | null>(null);
 
     // Bulk selection
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -261,6 +265,39 @@ export const ArticleProductionView: React.FC<{ onBack?: () => void }> = ({ onBac
             setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
         }
         toast.success(`Deleted ${success}/${ids.length} articles`);
+        queryClient.invalidateQueries({ queryKey: ['articles'] });
+        setSelectedIds(new Set());
+        setBulkProcessing(false);
+    };
+
+    const handleBulkGenerateCovers = async () => {
+        if (selectedIds.size === 0) return;
+        const selected = filteredArticles.filter((a: any) => selectedIds.has(a.id) && a.wp_post_id);
+        if (selected.length === 0) {
+            toast.warning('No selected articles have been synced to WordPress');
+            return;
+        }
+        setBulkProcessing(true);
+        setBulkProgress({ current: 0, total: selected.length });
+        let success = 0;
+        for (const article of selected) {
+            try {
+                const res = await fetch('/api/nana-banana/pipeline', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ site_id: article.site_id, post_id: article.id }),
+                });
+                if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(data.error || 'Pipeline failed');
+                }
+                success++;
+            } catch (err) {
+                console.error(`Cover generation failed for ${article.id}:`, err);
+            }
+            setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        }
+        toast.success(`Generated covers for ${success}/${selected.length} articles`);
         queryClient.invalidateQueries({ queryKey: ['articles'] });
         setSelectedIds(new Set());
         setBulkProcessing(false);
@@ -502,6 +539,15 @@ export const ArticleProductionView: React.FC<{ onBack?: () => void }> = ({ onBac
                                             <Upload size={12} />
                                             Sync to WP
                                         </button>
+                                        {nanaBananaEnabled && (
+                                            <button
+                                                onClick={handleBulkGenerateCovers}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500/30 hover:bg-yellow-500/50 rounded-lg text-xs font-semibold transition-colors"
+                                            >
+                                                <Wand2 size={12} />
+                                                Generate Covers
+                                            </button>
+                                        )}
                                         <button
                                             onClick={handleBulkDelete}
                                             className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/30 hover:bg-red-500/50 rounded-lg text-xs font-semibold transition-colors"
@@ -661,9 +707,42 @@ export const ArticleProductionView: React.FC<{ onBack?: () => void }> = ({ onBac
                                             </td>
                                             <td className="py-4 px-4 align-middle text-right pr-6">
                                                 {article.status === 'published' && article.wp_post_id ? (
-                                                    <span className="text-emerald-600 text-xs font-medium flex items-center justify-end gap-1">
-                                                        <CheckCircle2 size={14} /> Published
-                                                    </span>
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <span className="text-emerald-600 text-xs font-medium flex items-center gap-1">
+                                                            <CheckCircle2 size={14} /> Published
+                                                        </span>
+                                                        {nanaBananaEnabled && (
+                                                            <button
+                                                                onClick={async () => {
+                                                                    setGeneratingCoverId(article.id);
+                                                                    try {
+                                                                        const res = await fetch('/api/nana-banana/pipeline', {
+                                                                            method: 'POST',
+                                                                            headers: { 'Content-Type': 'application/json' },
+                                                                            body: JSON.stringify({ site_id: article.site_id, post_id: article.id }),
+                                                                        });
+                                                                        const data = await res.json();
+                                                                        if (!res.ok) throw new Error(data.error || 'Pipeline failed');
+                                                                        toast.success('Cover generated!');
+                                                                        queryClient.invalidateQueries({ queryKey: ['articles'] });
+                                                                    } catch (err) {
+                                                                        toast.error(`Cover failed: ${err instanceof Error ? err.message : 'Unknown'}`);
+                                                                    } finally {
+                                                                        setGeneratingCoverId(null);
+                                                                    }
+                                                                }}
+                                                                disabled={generatingCoverId === article.id}
+                                                                className="p-1.5 hover:bg-yellow-50 rounded-lg text-yellow-600 transition-colors disabled:opacity-50"
+                                                                title="Generate Cover"
+                                                            >
+                                                                {generatingCoverId === article.id ? (
+                                                                    <Loader2 size={16} className="animate-spin" />
+                                                                ) : (
+                                                                    <Wand2 size={16} />
+                                                                )}
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 ) : (
                                                     <div className="flex items-center justify-end gap-2">
                                                         <button
@@ -791,6 +870,7 @@ export const ArticleProductionView: React.FC<{ onBack?: () => void }> = ({ onBac
                     onSave={handleSaveArticle}
                     onPublish={handlePublishFromEditor}
                     onAnalyze={handleAnalyzeArticle}
+                    isNanaBananaEnabled={nanaBananaEnabled}
                 />
             )}
         </div>

@@ -22,6 +22,8 @@ import {
   Clock,
   Plus,
   FileText,
+  Wand2,
+  RefreshCw,
 } from 'lucide-react'
 import SEOMetaEditor from './SEOMetaEditor'
 import SERPPreview from './SERPPreview'
@@ -88,6 +90,7 @@ interface ArticleEditorProps {
   onPublish: (categoryIds: number[], tagIds: number[]) => Promise<void>
   onAnalyze: () => Promise<any>
   isWPPost?: boolean // true if editing a WP post (uses post_id for versions)
+  isNanaBananaEnabled?: boolean
 }
 
 export default function ArticleEditor({
@@ -97,6 +100,7 @@ export default function ArticleEditor({
   onPublish,
   onAnalyze,
   isWPPost = false,
+  isNanaBananaEnabled = false,
 }: ArticleEditorProps) {
   const [article, setArticle] = useState<Article>(initialArticle)
   const [activeTab, setActiveTab] = useState<'seo' | 'schema' | 'advanced' | 'history'>('seo')
@@ -107,6 +111,11 @@ export default function ArticleEditor({
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const [analysisData, setAnalysisData] = useState<any>(null)
   const [editorMode, setEditorMode] = useState<'visual' | 'code'>('visual')
+
+  // Cover generation state
+  const [generatingCover, setGeneratingCover] = useState(false)
+  const [generatedCoverUrl, setGeneratedCoverUrl] = useState<string | null>(article.og_image_url || null)
+  const [coverPipelineStep, setCoverPipelineStep] = useState<string>('idle')
 
   // Version history state
   const [versions, setVersions] = useState<VersionEntry[]>([])
@@ -626,13 +635,103 @@ export default function ArticleEditor({
             </div>
 
             {/* Featured Image */}
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-              <ImageIcon size={48} className="mx-auto text-gray-400 mb-3" />
-              <p className="text-sm text-gray-600 mb-2">Upload featured image</p>
-              <button className="text-sm text-indigo-600 hover:text-indigo-700 font-medium">
-                Choose file
-              </button>
-            </div>
+            {generatedCoverUrl ? (
+              <div className="relative rounded-xl overflow-hidden border border-gray-200">
+                <img src={generatedCoverUrl} alt="Featured image" className="w-full h-48 object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
+                  <span className="text-white text-xs font-semibold drop-shadow">Featured Image</span>
+                  {isNanaBananaEnabled && (
+                    <button
+                      onClick={async () => {
+                        setGeneratingCover(true)
+                        setCoverPipelineStep('prompt')
+                        try {
+                          const res = await fetch('/api/nana-banana/pipeline', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ site_id: article.site_id, post_id: article.id }),
+                          })
+                          const data = await res.json()
+                          if (!res.ok) throw new Error(data.error || 'Pipeline failed')
+                          setCoverPipelineStep('done')
+                          if (data.media_url) {
+                            setGeneratedCoverUrl(data.media_url)
+                            setArticle(prev => ({ ...prev, og_image_url: data.media_url }))
+                            setHasUnsavedChanges(true)
+                          }
+                        } catch (err) {
+                          setCoverPipelineStep('idle')
+                        } finally {
+                          setGeneratingCover(false)
+                        }
+                      }}
+                      disabled={generatingCover}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-white/20 backdrop-blur-sm text-white text-xs font-semibold rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
+                    >
+                      {generatingCover ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                      Regenerate
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : isNanaBananaEnabled ? (
+              <div className="border-2 border-dashed border-yellow-300 bg-yellow-50/50 rounded-xl p-6 text-center">
+                <Wand2 size={36} className="mx-auto text-yellow-500 mb-3" />
+                <p className="text-sm font-medium text-gray-700 mb-1">AI Cover Generation</p>
+                <p className="text-xs text-gray-500 mb-4">Generate a unique featured image with Nana Banana</p>
+                <button
+                  onClick={async () => {
+                    setGeneratingCover(true)
+                    setCoverPipelineStep('prompt')
+                    try {
+                      const res = await fetch('/api/nana-banana/pipeline', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ site_id: article.site_id, post_id: article.id }),
+                      })
+                      const data = await res.json()
+                      if (!res.ok) throw new Error(data.error || 'Pipeline failed')
+                      setCoverPipelineStep('done')
+                      if (data.media_url) {
+                        setGeneratedCoverUrl(data.media_url)
+                        setArticle(prev => ({ ...prev, og_image_url: data.media_url }))
+                        setHasUnsavedChanges(true)
+                      }
+                    } catch (err) {
+                      setCoverPipelineStep('idle')
+                    } finally {
+                      setGeneratingCover(false)
+                    }
+                  }}
+                  disabled={generatingCover}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-yellow-400 to-orange-500 text-white font-semibold rounded-xl text-sm hover:from-yellow-500 hover:to-orange-600 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {generatingCover ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      {coverPipelineStep === 'prompt' ? 'Creating prompt...' :
+                       coverPipelineStep === 'image' ? 'Generating image...' :
+                       coverPipelineStep === 'seo' ? 'Writing SEO...' :
+                       coverPipelineStep === 'push' ? 'Uploading to WP...' : 'Processing...'}
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 size={16} />
+                      Generate Cover
+                    </>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                <ImageIcon size={48} className="mx-auto text-gray-400 mb-3" />
+                <p className="text-sm text-gray-600 mb-2">Upload featured image</p>
+                <button className="text-sm text-indigo-600 hover:text-indigo-700 font-medium">
+                  Choose file
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Right: Sidebar (30%) */}
