@@ -438,10 +438,9 @@ export class WordPressClient {
         rank_math_twitter_image: rankMath.twitter_image_url || '',
         rank_math_twitter_card_type: rankMath.twitter_card_type || 'summary_large_image',
 
-        // Schema Markup
-        rank_math_primary_category: rankMath.primary_category_id || '',
-        rank_math_schema_article_type: rankMath.schema_article_type || 'Article',
-        rank_math_schemas: rankMath.schema_config ? JSON.stringify(rankMath.schema_config) : '',
+        // Primary Category (integer — only include when set)
+        ...(rankMath.primary_category_id ? { rank_math_primary_category: Number(rankMath.primary_category_id) } : {}),
+        // Note: rank_math_schema_* keys are managed by Rank Math internally — do NOT write them
       },
     }
 
@@ -510,10 +509,9 @@ export class WordPressClient {
         rank_math_twitter_image: rankMath.twitter_image_url || '',
         rank_math_twitter_card_type: rankMath.twitter_card_type || 'summary_large_image',
 
-        // Schema Markup
-        rank_math_primary_category: rankMath.primary_category_id || '',
-        rank_math_schema_article_type: rankMath.schema_article_type || 'Article',
-        rank_math_schemas: rankMath.schema_config ? JSON.stringify(rankMath.schema_config) : '',
+        // Primary Category (integer — only include when set)
+        ...(rankMath.primary_category_id ? { rank_math_primary_category: Number(rankMath.primary_category_id) } : {}),
+        // Note: rank_math_schema_* keys are managed by Rank Math internally — do NOT write them
       }
     }
 

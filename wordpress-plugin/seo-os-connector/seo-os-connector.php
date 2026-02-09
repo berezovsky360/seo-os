@@ -55,8 +55,9 @@ function seo_os_get_rank_math_fields(): array {
 
         // Schema
         'rank_math_primary_category'   => ['type' => 'integer', 'label' => 'Primary Category ID'],
-        'rank_math_schema_article_type' => ['type' => 'string', 'label' => 'Schema Article Type'],
-        'rank_math_schemas'            => ['type' => 'string', 'label' => 'Schema Config (JSON)'],
+        // Note: rank_math_schema_* keys (rank_math_schema_Article etc.) are managed by
+        // Rank Math internally as serialized arrays. Do NOT register or write them via REST API
+        // as it causes fatal errors in Rank Math's frontend schema renderer.
 
         // Pillar Content
         'rank_math_pillar_content'     => ['type' => 'string', 'label' => 'Pillar Content'],

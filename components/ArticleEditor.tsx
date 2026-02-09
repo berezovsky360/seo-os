@@ -126,9 +126,12 @@ export default function ArticleEditor({
     reader.onload = () => {
       const dataUrl = reader.result as string
       if (editorMode === 'visual') {
-        document.execCommand('insertImage', false, dataUrl)
         const editor = document.getElementById('visual-editor')
-        if (editor) updateField('content', editor.innerHTML)
+        if (editor) {
+          editor.focus()
+          document.execCommand('insertImage', false, dataUrl)
+          setHasUnsavedChanges(true)
+        }
       } else {
         const textarea = document.getElementById('article-content') as HTMLTextAreaElement
         if (!textarea) return
@@ -271,13 +274,11 @@ export default function ArticleEditor({
           break
         case 'image':
           inlineImageInputRef.current?.click()
-          return // Don't sync yet — handled in upload callback
+          return
       }
-      // Sync contentEditable HTML back to state
-      const editor = document.getElementById('visual-editor')
-      if (editor) {
-        updateField('content', editor.innerHTML)
-      }
+      // Don't sync to state here — execCommand already modified the DOM visually.
+      // State syncs on blur via onBlur handler, avoiding React re-render conflicts
+      // with contentEditable.
       return
     }
 
@@ -707,6 +708,9 @@ export default function ArticleEditor({
                     prose-img:rounded-lg prose-img:shadow-sm"
                   contentEditable
                   suppressContentEditableWarning
+                  onInput={(e) => {
+                    setHasUnsavedChanges(true)
+                  }}
                   onBlur={(e) => {
                     updateField('content', e.currentTarget.innerHTML)
                   }}
