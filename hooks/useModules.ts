@@ -19,7 +19,7 @@ export function useToggleModule() {
     mutationFn: ({ moduleId, enabled }: { moduleId: ModuleId; enabled: boolean }) =>
       moduleService.toggleModule(moduleId, enabled),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['modules'] })
+      queryClient.invalidateQueries({ queryKey: ['modules'], refetchType: 'all' })
     },
   })
 }

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Site } from '../types';
 import { ArticleRecord } from '@/lib/services/articleService';
-import { ChevronLeft, ChevronRight, Settings, FileText, Tag, Folder, Save, CheckCircle2, MoreHorizontal, Filter, Search, Globe, AlertTriangle, Monitor, Smartphone, TrendingUp, BarChart3, AlertCircle, Calendar, ChevronDown, Plus, Wifi, Trash2, Edit, Eye, GripVertical, Settings2, TrendingDown, X, Loader2, RefreshCw, Download, Puzzle, ExternalLink, Link2, Image as ImageIcon, BookOpen, Shield, Hash } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Settings, FileText, Tag, Folder, Save, CheckCircle2, MoreHorizontal, Filter, Search, Globe, AlertTriangle, Monitor, Smartphone, TrendingUp, BarChart3, AlertCircle, Calendar, ChevronDown, Plus, Wifi, Trash2, Edit, Eye, GripVertical, Settings2, TrendingDown, X, Loader2, RefreshCw, Download, Puzzle, ExternalLink, Link2, Image as ImageIcon, BookOpen, Shield, Hash, Upload, RefreshCcw } from 'lucide-react';
 import { useSite, useUpdateSite, useDeleteSite } from '@/hooks/useSites';
 import { useArticles, useCreateArticle, usePublishArticleToWordPress } from '@/hooks/useArticles';
 import { useSyncPosts, usePosts } from '@/hooks/usePosts';
@@ -128,6 +128,118 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
     const [newCategoryName, setNewCategoryName] = useState('');
     const [newTagName, setNewTagName] = useState('');
     const [isCreatingCatTag, setIsCreatingCatTag] = useState(false);
+
+    // Bulk Selection State
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [bulkProcessing, setBulkProcessing] = useState(false);
+    const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
+    const [showBulkStatusDropdown, setShowBulkStatusDropdown] = useState(false);
+
+    // Clear selection when contentFilter changes
+    useEffect(() => {
+        setSelectedIds(new Set());
+    }, [contentFilter]);
+
+    const toggleSelect = (id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === filteredContent.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(filteredContent.map(item => item.id)));
+        }
+    };
+
+    const handleBulkStatusChange = async (status: string) => {
+        setShowBulkStatusDropdown(false);
+        if (selectedIds.size === 0) return;
+        setBulkProcessing(true);
+        const items = filteredContent.filter(item => selectedIds.has(item.id));
+        setBulkProgress({ current: 0, total: items.length });
+        let success = 0;
+        for (const item of items) {
+            try {
+                const endpoint = item.source === 'wordpress'
+                    ? `/api/posts/${item.id}`
+                    : `/api/articles/${item.id}`;
+                await fetch(endpoint, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status }),
+                });
+                success++;
+            } catch {}
+            setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        }
+        toast.success(`Updated ${success}/${items.length} items`);
+        queryClient.invalidateQueries({ queryKey: ['articles'] });
+        queryClient.invalidateQueries({ queryKey: ['posts'] });
+        setSelectedIds(new Set());
+        setBulkProcessing(false);
+    };
+
+    const handleBulkPublish = async () => {
+        if (selectedIds.size === 0) return;
+        const items = filteredContent.filter(item => selectedIds.has(item.id) && item.title);
+        if (items.length === 0) {
+            toast.warning('Selected items must have a title');
+            return;
+        }
+        setBulkProcessing(true);
+        setBulkProgress({ current: 0, total: items.length });
+        let success = 0;
+        for (const item of items) {
+            try {
+                const endpoint = item.source === 'wordpress'
+                    ? `/api/posts/${item.id}/publish`
+                    : `/api/articles/${item.id}/publish`;
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ siteId }),
+                });
+                const result = await res.json();
+                if (result.success) success++;
+            } catch {}
+            setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        }
+        toast.success(`Synced ${success}/${items.length} items to WordPress`);
+        queryClient.invalidateQueries({ queryKey: ['articles'] });
+        queryClient.invalidateQueries({ queryKey: ['posts'] });
+        setSelectedIds(new Set());
+        setBulkProcessing(false);
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedIds.size === 0) return;
+        if (!window.confirm(`Delete ${selectedIds.size} items? This cannot be undone.`)) return;
+        setBulkProcessing(true);
+        const items = filteredContent.filter(item => selectedIds.has(item.id));
+        setBulkProgress({ current: 0, total: items.length });
+        let success = 0;
+        for (const item of items) {
+            try {
+                const endpoint = item.source === 'wordpress'
+                    ? `/api/posts/${item.id}`
+                    : `/api/articles/${item.id}`;
+                await fetch(endpoint, { method: 'DELETE' });
+                success++;
+            } catch {}
+            setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        }
+        toast.success(`Deleted ${success}/${items.length} items`);
+        queryClient.invalidateQueries({ queryKey: ['articles'] });
+        queryClient.invalidateQueries({ queryKey: ['posts'] });
+        setSelectedIds(new Set());
+        setBulkProcessing(false);
+    };
 
     // Column Customization State
     const [showColumnCustomizer, setShowColumnCustomizer] = useState(false);
@@ -1036,11 +1148,83 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                         </button>
                     </div>
                 </div>
+
+                {/* Bulk Actions Bar */}
+                {selectedIds.size > 0 && (
+                    <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 flex items-center justify-between">
+                        <span className="text-sm font-semibold">
+                            Bulk Actions for {selectedIds.size} selected:
+                        </span>
+                        <div className="flex items-center gap-2">
+                            {bulkProcessing ? (
+                                <div className="flex items-center gap-2 text-sm">
+                                    <Loader2 size={14} className="animate-spin" />
+                                    <span>{bulkProgress.current}/{bulkProgress.total}</span>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="relative">
+                                        <button
+                                            onClick={() => setShowBulkStatusDropdown(!showBulkStatusDropdown)}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-semibold transition-colors"
+                                        >
+                                            <RefreshCcw size={12} />
+                                            Change Status
+                                            <ChevronDown size={12} />
+                                        </button>
+                                        {showBulkStatusDropdown && (
+                                            <div className="absolute top-full mt-1 right-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-30 min-w-[140px]">
+                                                {['draft', 'reviewed', 'published'].map(s => (
+                                                    <button
+                                                        key={s}
+                                                        onClick={() => handleBulkStatusChange(s)}
+                                                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 capitalize"
+                                                    >
+                                                        {s}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <button
+                                        onClick={handleBulkPublish}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-semibold transition-colors"
+                                    >
+                                        <Upload size={12} />
+                                        Sync to WP
+                                    </button>
+                                    <button
+                                        onClick={handleBulkDelete}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/30 hover:bg-red-500/50 rounded-lg text-xs font-semibold transition-colors"
+                                    >
+                                        <Trash2 size={12} />
+                                        Delete
+                                    </button>
+                                    <button
+                                        onClick={() => setSelectedIds(new Set())}
+                                        className="px-3 py-1.5 text-xs font-semibold hover:bg-white/10 rounded-lg transition-colors"
+                                    >
+                                        Deselect All
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
                         <thead className="bg-gray-50/50 text-gray-500 font-semibold border-b border-gray-100">
                             <tr>
-                                <th className="px-6 py-4 w-10"><input type="checkbox" className="rounded-md border-gray-300" /></th>
+                                <th className="px-6 py-4 w-10">
+                                    <input
+                                        type="checkbox"
+                                        className="rounded-md border-gray-300"
+                                        checked={filteredContent.length > 0 && selectedIds.size === filteredContent.length}
+                                        ref={(el) => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filteredContent.length; }}
+                                        onChange={toggleSelectAll}
+                                    />
+                                </th>
                                 {visibleColumns.map((columnId) => {
                                     const column = AVAILABLE_COLUMNS.find((col) => col.id === columnId);
                                     if (!column) return null;
@@ -1096,8 +1280,15 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                 </tr>
                             ) : (
                                 filteredContent.map(item => (
-                                    <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="px-6 py-4"><input type="checkbox" className="rounded-md border-gray-300" /></td>
+                                    <tr key={item.id} className={`hover:bg-gray-50/50 transition-colors ${selectedIds.has(item.id) ? 'bg-indigo-50/50' : ''}`}>
+                                        <td className="px-6 py-4">
+                                            <input
+                                                type="checkbox"
+                                                className="rounded-md border-gray-300"
+                                                checked={selectedIds.has(item.id)}
+                                                onChange={() => toggleSelect(item.id)}
+                                            />
+                                        </td>
                                         {visibleColumns.includes('title') && (
                                             <td className="px-6 py-4">
                                                 <div

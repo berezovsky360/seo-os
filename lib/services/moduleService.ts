@@ -25,13 +25,15 @@ export const moduleService = {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Not authenticated')
 
-    await supabase
+    const { error } = await supabase
       .from('modules_config')
       .upsert({
         user_id: user.id,
         module_id: moduleId,
         enabled,
       }, { onConflict: 'user_id,module_id' })
+
+    if (error) throw new Error(`Failed to toggle module: ${error.message}`)
   },
 
   async batchToggle(modules: { module_id: ModuleId; enabled: boolean }[]): Promise<void> {
@@ -50,12 +52,14 @@ export const moduleService = {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Not authenticated')
 
-    await supabase
+    const { error } = await supabase
       .from('modules_config')
       .upsert({
         user_id: user.id,
         module_id: moduleId,
         settings,
       }, { onConflict: 'user_id,module_id' })
+
+    if (error) throw new Error(`Failed to update settings: ${error.message}`)
   },
 }

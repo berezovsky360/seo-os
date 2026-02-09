@@ -4,7 +4,8 @@ import {
     Search, Filter, ArrowUpDown, MoreHorizontal, CheckCircle2, Circle,
     ChevronDown, ChevronRight, LayoutGrid, List as ListIcon, Maximize2,
     ChevronLeft, Download, Bell, Sparkles, RefreshCw, MapPin,
-    Plus, Tag, Edit, Eye, GripVertical, Settings2, TrendingUp, TrendingDown, Globe, FileText, Calendar, X, Loader2
+    Plus, Tag, Edit, Eye, GripVertical, Settings2, TrendingUp, TrendingDown, Globe, FileText, Calendar, X, Loader2,
+    Trash2, Upload, RefreshCcw
 } from 'lucide-react';
 import { MOCK_KEYWORDS, MOCK_ARTICLES, MOCK_LLM_RESULTS } from '../constants';
 import ArticleDrawer from './ArticleDrawer';
@@ -169,6 +170,101 @@ export const ArticleProductionView: React.FC<{ onBack?: () => void }> = ({ onBac
     const [isCreating, setIsCreating] = useState(false);
     const [publishingArticleId, setPublishingArticleId] = useState<string | null>(null);
     const [analyzingArticleId, setAnalyzingArticleId] = useState<string | null>(null);
+
+    // Bulk selection
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [bulkProcessing, setBulkProcessing] = useState(false);
+    const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
+    const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+
+    const toggleSelect = (id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === filteredArticles.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(filteredArticles.map((a: any) => a.id)));
+        }
+    };
+
+    const handleBulkStatusChange = async (status: string) => {
+        setShowStatusDropdown(false);
+        if (selectedIds.size === 0) return;
+        setBulkProcessing(true);
+        const ids = Array.from(selectedIds);
+        setBulkProgress({ current: 0, total: ids.length });
+        let success = 0;
+        for (const id of ids) {
+            try {
+                await fetch(`/api/articles/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status }),
+                });
+                success++;
+            } catch {}
+            setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        }
+        toast.success(`Updated ${success}/${ids.length} articles`);
+        queryClient.invalidateQueries({ queryKey: ['articles'] });
+        setSelectedIds(new Set());
+        setBulkProcessing(false);
+    };
+
+    const handleBulkPublish = async () => {
+        if (selectedIds.size === 0) return;
+        const selected = filteredArticles.filter((a: any) => selectedIds.has(a.id) && a.title && a.content);
+        if (selected.length === 0) {
+            toast.warning('Selected articles must have title and content');
+            return;
+        }
+        setBulkProcessing(true);
+        setBulkProgress({ current: 0, total: selected.length });
+        let success = 0;
+        for (const article of selected) {
+            try {
+                const res = await fetch(`/api/articles/${article.id}/publish`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ siteId: article.site_id }),
+                });
+                const result = await res.json();
+                if (result.success) success++;
+            } catch {}
+            setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        }
+        toast.success(`Published ${success}/${selected.length} articles`);
+        queryClient.invalidateQueries({ queryKey: ['articles'] });
+        setSelectedIds(new Set());
+        setBulkProcessing(false);
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedIds.size === 0) return;
+        if (!window.confirm(`Delete ${selectedIds.size} articles? This cannot be undone.`)) return;
+        setBulkProcessing(true);
+        const ids = Array.from(selectedIds);
+        setBulkProgress({ current: 0, total: ids.length });
+        let success = 0;
+        for (const id of ids) {
+            try {
+                await fetch(`/api/articles/${id}`, { method: 'DELETE' });
+                success++;
+            } catch {}
+            setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        }
+        toast.success(`Deleted ${success}/${ids.length} articles`);
+        queryClient.invalidateQueries({ queryKey: ['articles'] });
+        setSelectedIds(new Set());
+        setBulkProcessing(false);
+    };
 
     const filteredArticles = articles.filter((article: any) => {
         if (!searchQuery) return true;
@@ -362,12 +458,83 @@ export const ArticleProductionView: React.FC<{ onBack?: () => void }> = ({ onBac
                         </div>
                     </div>
 
+                    {/* Bulk Actions Bar */}
+                    {selectedIds.size > 0 && (
+                        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 flex items-center justify-between">
+                            <span className="text-sm font-semibold">
+                                Bulk Actions for {selectedIds.size} selected articles:
+                            </span>
+                            <div className="flex items-center gap-2">
+                                {bulkProcessing ? (
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <Loader2 size={14} className="animate-spin" />
+                                        <span>{bulkProgress.current}/{bulkProgress.total}</span>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="relative">
+                                            <button
+                                                onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-semibold transition-colors"
+                                            >
+                                                <RefreshCcw size={12} />
+                                                Change Status
+                                                <ChevronDown size={12} />
+                                            </button>
+                                            {showStatusDropdown && (
+                                                <div className="absolute top-full mt-1 right-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-30 min-w-[140px]">
+                                                    {['draft', 'reviewed', 'published'].map(s => (
+                                                        <button
+                                                            key={s}
+                                                            onClick={() => handleBulkStatusChange(s)}
+                                                            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 capitalize"
+                                                        >
+                                                            {s}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <button
+                                            onClick={handleBulkPublish}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-semibold transition-colors"
+                                        >
+                                            <Upload size={12} />
+                                            Sync to WP
+                                        </button>
+                                        <button
+                                            onClick={handleBulkDelete}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/30 hover:bg-red-500/50 rounded-lg text-xs font-semibold transition-colors"
+                                        >
+                                            <Trash2 size={12} />
+                                            Delete
+                                        </button>
+                                        <button
+                                            onClick={() => setSelectedIds(new Set())}
+                                            className="px-3 py-1.5 text-xs font-semibold hover:bg-white/10 rounded-lg transition-colors"
+                                        >
+                                            Deselect All
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Table */}
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="border-b border-gray-100">
-                                    <th className="py-4 pl-6 pr-4 w-10"><input type="checkbox" className="rounded-md border-gray-300" /></th>
+                                    <th className="py-4 pl-6 pr-4 w-10">
+                                        <input
+                                            type="checkbox"
+                                            className="rounded-md border-gray-300"
+                                            checked={filteredArticles.length > 0 && selectedIds.size === filteredArticles.length}
+                                            ref={(el) => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filteredArticles.length; }}
+                                            onChange={toggleSelectAll}
+                                        />
+                                    </th>
                                     <th className="py-4 px-4 text-xs font-bold text-gray-900 uppercase tracking-wider">Title</th>
                                     <th className="py-4 px-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Site</th>
                                     <th className="py-4 px-4 text-xs font-bold text-gray-900 uppercase tracking-wider">Keyword</th>
@@ -412,7 +579,12 @@ export const ArticleProductionView: React.FC<{ onBack?: () => void }> = ({ onBac
                                     filteredArticles.map((article: any) => (
                                         <tr key={article.id} className="hover:bg-gray-50/50 transition-colors group">
                                             <td className="py-4 pl-6 pr-4 align-middle">
-                                                <input type="checkbox" className="rounded-md border-gray-300" />
+                                                <input
+                                                    type="checkbox"
+                                                    className="rounded-md border-gray-300"
+                                                    checked={selectedIds.has(article.id)}
+                                                    onChange={() => toggleSelect(article.id)}
+                                                />
                                             </td>
                                             <td className="py-4 px-4 align-middle">
                                                 <div
