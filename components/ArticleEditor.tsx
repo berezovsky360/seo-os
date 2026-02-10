@@ -27,6 +27,11 @@ import {
   Heading,
   ChevronDown,
   ExternalLink,
+  ListOrdered,
+  Strikethrough,
+  Underline as UnderlineIcon,
+  Undo2,
+  Redo2,
 } from 'lucide-react'
 import SEOMetaEditor from './SEOMetaEditor'
 import SERPPreview from './SERPPreview'
@@ -335,98 +340,379 @@ export default function ArticleEditor({
     setShowLinkDialog(false)
   }
 
-  // Format toolbar buttons
-  const formatText = (format: string) => {
-    // Heading formats
-    if (format.startsWith('h') || format === 'p') {
-      const tag = format === 'p' ? 'p' : format
-      if (editorMode === 'visual') {
-        document.execCommand('formatBlock', false, tag)
-      } else {
-        const textarea = document.getElementById('article-content') as HTMLTextAreaElement
-        if (!textarea) return
-        const start = textarea.selectionStart
-        const end = textarea.selectionEnd
-        const selectedText = (article.content || '').substring(start, end) || 'Heading'
-        const current = article.content || ''
-        const wrapped = `<${tag}>${selectedText}</${tag}>`
-        updateField('content', current.substring(0, start) + wrapped + current.substring(end))
+  // === DOM-based formatting engine ===
+
+  // Helper: get the editor element
+  const getEditor = () => document.getElementById('visual-editor')
+
+  // Helper: get current selection within editor
+  const getEditorSelection = () => {
+    const sel = window.getSelection()
+    const editor = getEditor()
+    if (!sel || !editor || sel.rangeCount === 0) return null
+    const range = sel.getRangeAt(0)
+    // Verify selection is inside our editor
+    if (!editor.contains(range.commonAncestorContainer)) return null
+    return { sel, range }
+  }
+
+  // Helper: find the closest block-level parent of a node within the editor
+  const getBlockParent = (node: Node): HTMLElement | null => {
+    const editor = getEditor()
+    if (!editor) return null
+    let current: Node | null = node
+    const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'BLOCKQUOTE', 'DIV', 'PRE', 'UL', 'OL']
+    while (current && current !== editor) {
+      if (current.nodeType === Node.ELEMENT_NODE && blockTags.includes((current as HTMLElement).tagName)) {
+        return current as HTMLElement
       }
+      current = current.parentNode
+    }
+    return null
+  }
+
+  // Helper: get all block elements that overlap the current selection
+  const getSelectedBlocks = (): HTMLElement[] => {
+    const result = getEditorSelection()
+    if (!result) return []
+    const { range } = result
+    const editor = getEditor()
+    if (!editor) return []
+
+    const blocks: HTMLElement[] = []
+    const startBlock = getBlockParent(range.startContainer)
+    const endBlock = getBlockParent(range.endContainer)
+
+    if (!startBlock && !endBlock) {
+      // Text directly in editor, wrap in <p>
+      return []
+    }
+
+    // Walk through editor's children to find blocks in selection range
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_ELEMENT, {
+      acceptNode: (node) => {
+        const el = node as HTMLElement
+        const tag = el.tagName
+        if (['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'BLOCKQUOTE', 'DIV', 'PRE'].includes(tag)) {
+          if (range.intersectsNode(el)) {
+            return NodeFilter.FILTER_ACCEPT
+          }
+        }
+        return NodeFilter.FILTER_SKIP
+      }
+    })
+
+    let node: Node | null
+    while ((node = walker.nextNode())) {
+      blocks.push(node as HTMLElement)
+    }
+
+    // If no blocks found but we have a startBlock, use it
+    if (blocks.length === 0 && startBlock) {
+      blocks.push(startBlock)
+    }
+
+    return blocks
+  }
+
+  // Helper: wrap inline selection with a tag
+  const wrapSelectionWith = (tagName: string) => {
+    const result = getEditorSelection()
+    if (!result) return
+    const { sel, range } = result
+
+    // Check if already wrapped — toggle off
+    let parentEl: Node | null = range.commonAncestorContainer
+    while (parentEl && parentEl !== getEditor()) {
+      if (parentEl.nodeType === Node.ELEMENT_NODE && (parentEl as HTMLElement).tagName === tagName.toUpperCase()) {
+        // Unwrap: replace the element with its contents
+        const parent = parentEl.parentNode
+        if (parent) {
+          while (parentEl.firstChild) {
+            parent.insertBefore(parentEl.firstChild, parentEl)
+          }
+          parent.removeChild(parentEl)
+        }
+        setHasUnsavedChanges(true)
+        return
+      }
+      parentEl = parentEl.parentNode
+    }
+
+    // Wrap selection
+    const wrapper = document.createElement(tagName)
+    try {
+      range.surroundContents(wrapper)
+    } catch {
+      // surroundContents fails when selection crosses element boundaries
+      // Extract and re-insert
+      const fragment = range.extractContents()
+      wrapper.appendChild(fragment)
+      range.insertNode(wrapper)
+    }
+    sel.removeAllRanges()
+    const newRange = document.createRange()
+    newRange.selectNodeContents(wrapper)
+    sel.addRange(newRange)
+    setHasUnsavedChanges(true)
+  }
+
+  // Convert selected blocks to heading/paragraph
+  const formatAsBlock = (tagName: string) => {
+    const editor = getEditor()
+    if (!editor) return
+    const result = getEditorSelection()
+    if (!result) return
+    const { sel, range } = result
+
+    const blocks = getSelectedBlocks()
+
+    if (blocks.length === 0) {
+      // No block parent — wrap current selection in a new block
+      const newBlock = document.createElement(tagName)
+      const fragment = range.extractContents()
+      newBlock.appendChild(fragment)
+      range.insertNode(newBlock)
+      sel.removeAllRanges()
+      const r = document.createRange()
+      r.selectNodeContents(newBlock)
+      sel.addRange(r)
+    } else {
+      // Replace each block with the new tag
+      blocks.forEach(block => {
+        // Don't convert <li> items, convert their parent list instead
+        if (block.tagName === 'LI') return
+        const newBlock = document.createElement(tagName)
+        newBlock.innerHTML = block.innerHTML
+        block.parentNode?.replaceChild(newBlock, block)
+      })
+    }
+    setHasUnsavedChanges(true)
+  }
+
+  // Convert selection to a list (ul or ol)
+  const formatAsList = (listTag: 'ul' | 'ol') => {
+    const editor = getEditor()
+    if (!editor) return
+    const result = getEditorSelection()
+    if (!result) return
+    const { sel, range } = result
+
+    const blocks = getSelectedBlocks()
+
+    // Check if already in a list of the same type — toggle off
+    if (blocks.length > 0 && blocks[0].tagName === 'LI') {
+      const parentList = blocks[0].parentElement
+      if (parentList && parentList.tagName === listTag.toUpperCase()) {
+        // Unwrap: convert each <li> back to <p>
+        const items = Array.from(parentList.children)
+        const parent = parentList.parentNode
+        items.forEach(li => {
+          const p = document.createElement('p')
+          p.innerHTML = li.innerHTML
+          parent?.insertBefore(p, parentList)
+        })
+        parent?.removeChild(parentList)
+        setHasUnsavedChanges(true)
+        return
+      }
+      // Different list type — just change the wrapper
+      if (parentList) {
+        const newList = document.createElement(listTag)
+        newList.innerHTML = parentList.innerHTML
+        parentList.parentNode?.replaceChild(newList, parentList)
+        setHasUnsavedChanges(true)
+        return
+      }
+    }
+
+    // Create list from selected blocks or selection
+    const list = document.createElement(listTag)
+
+    if (blocks.length === 0) {
+      // No blocks — wrap current text
+      const li = document.createElement('li')
+      const fragment = range.extractContents()
+      li.appendChild(fragment)
+      list.appendChild(li)
+      range.insertNode(list)
+    } else {
+      // Convert each block to <li>
+      const firstBlock = blocks[0]
+      blocks.forEach(block => {
+        if (block.tagName === 'LI') return // skip if already list items
+        const li = document.createElement('li')
+        li.innerHTML = block.innerHTML
+        list.appendChild(li)
+        if (block !== firstBlock) {
+          block.parentNode?.removeChild(block)
+        }
+      })
+      firstBlock.parentNode?.replaceChild(list, firstBlock)
+    }
+
+    setHasUnsavedChanges(true)
+  }
+
+  // Format as blockquote
+  const formatAsQuote = () => {
+    const editor = getEditor()
+    if (!editor) return
+    const result = getEditorSelection()
+    if (!result) return
+    const { range } = result
+
+    const blocks = getSelectedBlocks()
+
+    // Check if already in blockquote — toggle off
+    if (blocks.length > 0) {
+      let bq: HTMLElement | null = blocks[0]
+      while (bq && bq !== editor) {
+        if (bq.tagName === 'BLOCKQUOTE') {
+          // Unwrap blockquote
+          const parent = bq.parentNode
+          while (bq.firstChild) {
+            parent?.insertBefore(bq.firstChild, bq)
+          }
+          parent?.removeChild(bq)
+          setHasUnsavedChanges(true)
+          return
+        }
+        bq = bq.parentElement
+      }
+    }
+
+    const blockquote = document.createElement('blockquote')
+
+    if (blocks.length === 0) {
+      const fragment = range.extractContents()
+      const p = document.createElement('p')
+      p.appendChild(fragment)
+      blockquote.appendChild(p)
+      range.insertNode(blockquote)
+    } else {
+      const firstBlock = blocks[0]
+      blocks.forEach(block => {
+        const clone = block.cloneNode(true) as HTMLElement
+        blockquote.appendChild(clone)
+        if (block !== firstBlock) {
+          block.parentNode?.removeChild(block)
+        }
+      })
+      firstBlock.parentNode?.replaceChild(blockquote, firstBlock)
+    }
+
+    setHasUnsavedChanges(true)
+  }
+
+  // Main format dispatcher
+  const formatText = (format: string) => {
+    if (format === 'link') {
+      openLinkDialog()
+      return
+    }
+    if (format === 'image') {
+      inlineImageInputRef.current?.click()
       return
     }
 
     if (editorMode === 'visual') {
-      // Visual mode: use execCommand on contentEditable div
+      const editor = getEditor()
+      if (!editor) return
+      editor.focus()
+
+      // Heading / paragraph formats
+      if (['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(format)) {
+        formatAsBlock(format)
+        return
+      }
+
       switch (format) {
         case 'bold':
-          document.execCommand('bold')
+          wrapSelectionWith('strong')
           break
         case 'italic':
-          document.execCommand('italic')
+          wrapSelectionWith('em')
           break
-        case 'link':
-          openLinkDialog()
-          return
+        case 'underline':
+          wrapSelectionWith('u')
+          break
+        case 'strikethrough':
+          wrapSelectionWith('s')
+          break
         case 'list':
-          document.execCommand('insertUnorderedList')
+          formatAsList('ul')
+          break
+        case 'ordered-list':
+          formatAsList('ol')
           break
         case 'quote':
-          document.execCommand('formatBlock', false, 'blockquote')
+          formatAsQuote()
           break
         case 'code':
-          const selection = window.getSelection()
-          if (selection && selection.rangeCount > 0) {
-            const range = selection.getRangeAt(0)
-            const code = document.createElement('code')
-            range.surroundContents(code)
-          }
+          wrapSelectionWith('code')
           break
-        case 'image':
-          inlineImageInputRef.current?.click()
-          return
+        case 'undo':
+          document.execCommand('undo')
+          break
+        case 'redo':
+          document.execCommand('redo')
+          break
       }
+      setHasUnsavedChanges(true)
       return
     }
 
-    // Code mode: manipulate textarea selection
+    // === Code mode: manipulate textarea ===
     const textarea = document.getElementById('article-content') as HTMLTextAreaElement
     if (!textarea) return
 
     const start = textarea.selectionStart
     const end = textarea.selectionEnd
-    const selectedText = (article.content || '').substring(start, end)
+    const content = article.content || ''
+    const selectedText = content.substring(start, end)
 
     let formattedText = ''
-    switch (format) {
-      case 'bold':
-        formattedText = `<strong>${selectedText}</strong>`
-        break
-      case 'italic':
-        formattedText = `<em>${selectedText}</em>`
-        break
-      case 'link':
-        openLinkDialog()
-        return
-      case 'list':
-        formattedText = `<ul>\n  <li>${selectedText || 'List item'}</li>\n</ul>`
-        break
-      case 'quote':
-        formattedText = `<blockquote>${selectedText}</blockquote>`
-        break
-      case 'code':
-        formattedText = `<code>${selectedText}</code>`
-        break
-      case 'image':
-        inlineImageInputRef.current?.click()
-        return
-      default:
-        return
+
+    // Headings
+    if (['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(format)) {
+      formattedText = `<${format}>${selectedText || 'Text'}</${format}>`
+    } else {
+      switch (format) {
+        case 'bold':
+          formattedText = `<strong>${selectedText}</strong>`
+          break
+        case 'italic':
+          formattedText = `<em>${selectedText}</em>`
+          break
+        case 'underline':
+          formattedText = `<u>${selectedText}</u>`
+          break
+        case 'strikethrough':
+          formattedText = `<s>${selectedText}</s>`
+          break
+        case 'list': {
+          const items = selectedText ? selectedText.split('\n').filter(Boolean) : ['List item']
+          formattedText = `<ul>\n${items.map(i => `  <li>${i.trim()}</li>`).join('\n')}\n</ul>`
+          break
+        }
+        case 'ordered-list': {
+          const items = selectedText ? selectedText.split('\n').filter(Boolean) : ['List item']
+          formattedText = `<ol>\n${items.map(i => `  <li>${i.trim()}</li>`).join('\n')}\n</ol>`
+          break
+        }
+        case 'quote':
+          formattedText = `<blockquote>${selectedText || 'Quote'}</blockquote>`
+          break
+        case 'code':
+          formattedText = `<code>${selectedText}</code>`
+          break
+        default:
+          return
+      }
     }
 
-    const currentContent = article.content || ''
-    const newContent =
-      currentContent.substring(0, start) + formattedText + currentContent.substring(end)
-    updateField('content', newContent)
+    updateField('content', content.substring(0, start) + formattedText + content.substring(end))
   }
 
   // Fetch version history
@@ -759,47 +1045,71 @@ export default function ArticleEditor({
                 )}
               </div>
               <div className="w-px h-6 bg-gray-300 mx-1" />
+              {/* Text formatting */}
               <button
                 onMouseDown={(e) => { e.preventDefault(); formatText('bold') }}
                 className="p-2 hover:bg-white rounded transition-colors"
-                title="Bold"
+                title="Bold (Ctrl+B)"
               >
                 <Bold size={18} />
               </button>
               <button
                 onMouseDown={(e) => { e.preventDefault(); formatText('italic') }}
                 className="p-2 hover:bg-white rounded transition-colors"
-                title="Italic"
+                title="Italic (Ctrl+I)"
               >
                 <Italic size={18} />
               </button>
+              <button
+                onMouseDown={(e) => { e.preventDefault(); formatText('underline') }}
+                className="p-2 hover:bg-white rounded transition-colors"
+                title="Underline (Ctrl+U)"
+              >
+                <UnderlineIcon size={18} />
+              </button>
+              <button
+                onMouseDown={(e) => { e.preventDefault(); formatText('strikethrough') }}
+                className="p-2 hover:bg-white rounded transition-colors"
+                title="Strikethrough"
+              >
+                <Strikethrough size={18} />
+              </button>
               <div className="w-px h-6 bg-gray-300 mx-1" />
+              {/* Lists */}
               <button
                 onMouseDown={(e) => { e.preventDefault(); formatText('list') }}
                 className="p-2 hover:bg-white rounded transition-colors"
-                title="List"
+                title="Bullet List"
               >
                 <List size={18} />
               </button>
               <button
+                onMouseDown={(e) => { e.preventDefault(); formatText('ordered-list') }}
+                className="p-2 hover:bg-white rounded transition-colors"
+                title="Numbered List"
+              >
+                <ListOrdered size={18} />
+              </button>
+              <button
                 onMouseDown={(e) => { e.preventDefault(); formatText('quote') }}
                 className="p-2 hover:bg-white rounded transition-colors"
-                title="Quote"
+                title="Blockquote"
               >
                 <Quote size={18} />
               </button>
               <div className="w-px h-6 bg-gray-300 mx-1" />
+              {/* Insert */}
               <button
                 onMouseDown={(e) => { e.preventDefault(); formatText('link') }}
                 className="p-2 hover:bg-white rounded transition-colors"
-                title="Link"
+                title="Insert Link"
               >
                 <Link2 size={18} />
               </button>
               <button
                 onMouseDown={(e) => { e.preventDefault(); formatText('code') }}
                 className="p-2 hover:bg-white rounded transition-colors"
-                title="Code"
+                title="Inline Code"
               >
                 <Code size={18} />
               </button>
@@ -809,6 +1119,22 @@ export default function ArticleEditor({
                 title="Insert Image"
               >
                 {uploadingImage ? <Loader2 size={18} className="animate-spin" /> : <ImageIcon size={18} />}
+              </button>
+              <div className="w-px h-6 bg-gray-300 mx-1" />
+              {/* Undo/Redo */}
+              <button
+                onMouseDown={(e) => { e.preventDefault(); formatText('undo') }}
+                className="p-2 hover:bg-white rounded transition-colors"
+                title="Undo"
+              >
+                <Undo2 size={18} />
+              </button>
+              <button
+                onMouseDown={(e) => { e.preventDefault(); formatText('redo') }}
+                className="p-2 hover:bg-white rounded transition-colors"
+                title="Redo"
+              >
+                <Redo2 size={18} />
               </button>
             </div>
 
@@ -840,9 +1166,19 @@ export default function ArticleEditor({
               {editorMode === 'visual' ? (
                 <div
                   id="visual-editor"
-                  className="w-full min-h-[300px] md:min-h-[600px] border border-gray-200 rounded-lg px-4 md:px-6 py-4 text-base leading-relaxed focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent overflow-y-auto bg-white prose prose-sm max-w-none
-                    prose-headings:text-gray-900 prose-p:text-gray-700 prose-a:text-indigo-600 prose-strong:text-gray-900
-                    prose-img:rounded-lg prose-img:shadow-sm"
+                  className="w-full min-h-[300px] md:min-h-[600px] border border-gray-200 rounded-lg px-4 md:px-6 py-4 text-base leading-relaxed focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent overflow-y-auto bg-white prose prose-base max-w-none
+                    prose-headings:text-gray-900 prose-headings:font-bold prose-headings:mt-6 prose-headings:mb-3
+                    prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl prose-h4:text-lg prose-h5:text-base prose-h6:text-sm
+                    prose-p:text-gray-700 prose-p:my-3
+                    prose-a:text-indigo-600 prose-a:underline
+                    prose-strong:text-gray-900 prose-strong:font-bold
+                    prose-em:italic
+                    prose-blockquote:border-l-4 prose-blockquote:border-indigo-400 prose-blockquote:bg-indigo-50/50 prose-blockquote:pl-4 prose-blockquote:py-2 prose-blockquote:my-4 prose-blockquote:rounded-r-lg prose-blockquote:italic prose-blockquote:text-gray-600
+                    prose-ul:list-disc prose-ul:pl-6 prose-ul:my-3
+                    prose-ol:list-decimal prose-ol:pl-6 prose-ol:my-3
+                    prose-li:my-1 prose-li:text-gray-700
+                    prose-code:bg-gray-100 prose-code:text-rose-600 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:font-mono
+                    prose-img:rounded-lg prose-img:shadow-sm prose-img:my-4"
                   contentEditable
                   suppressContentEditableWarning
                   onInput={(e) => {
