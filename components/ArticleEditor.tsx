@@ -123,6 +123,7 @@ export default function ArticleEditor({
   const inlineImageInputRef = useRef<HTMLInputElement>(null)
 
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false)
 
   // Upload image to WP media library, returns URL
   const uploadToWP = async (file: File): Promise<string | null> => {
@@ -997,8 +998,51 @@ export default function ArticleEditor({
             )}
           </div>
 
-          {/* Right: Sidebar (30%) — stacks below on mobile */}
-          <div className="w-full md:w-[400px] border-t md:border-t-0 md:border-l border-gray-200 flex flex-col overflow-hidden shrink-0">
+          {/* Mobile FAB — toggle sidebar */}
+          <button
+            onClick={() => setShowMobileSidebar(true)}
+            className="md:hidden fixed bottom-6 right-6 z-20 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-600/30 flex items-center justify-center hover:bg-indigo-700 transition-colors"
+          >
+            <FileText size={22} />
+          </button>
+
+          {/* Mobile sidebar backdrop */}
+          {showMobileSidebar && (
+            <div
+              className="md:hidden fixed inset-0 bg-black/30 z-30"
+              onClick={() => setShowMobileSidebar(false)}
+            />
+          )}
+
+          {/* Right: Sidebar (30%) — bottom sheet on mobile, side panel on desktop */}
+          <div className={`
+            fixed md:relative inset-x-0 bottom-0 z-40
+            md:inset-auto md:z-auto
+            w-full md:w-[400px]
+            max-h-[85vh] md:max-h-none
+            border-t md:border-t-0 md:border-l border-gray-200
+            flex flex-col overflow-hidden shrink-0
+            bg-white md:bg-transparent
+            rounded-t-2xl md:rounded-none
+            shadow-2xl md:shadow-none
+            transition-transform duration-300 ease-in-out
+            ${showMobileSidebar ? 'translate-y-0' : 'translate-y-full'}
+            md:translate-y-0
+          `}>
+            {/* Mobile handle + close */}
+            <div className="md:hidden flex items-center justify-between px-4 pt-3 pb-1">
+              <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto" />
+            </div>
+            <div className="md:hidden flex items-center justify-between px-4 pb-2">
+              <h3 className="text-sm font-bold text-gray-900">SEO & Metadata</h3>
+              <button
+                onClick={() => setShowMobileSidebar(false)}
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
             {/* Tabs */}
             <div className="flex border-b border-gray-200">
               <button
