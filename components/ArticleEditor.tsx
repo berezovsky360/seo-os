@@ -126,9 +126,22 @@ export default function ArticleEditor({
   const [coverPipelineStep, setCoverPipelineStep] = useState<string>('idle')
   const featuredImageInputRef = useRef<HTMLInputElement>(null)
   const inlineImageInputRef = useRef<HTMLInputElement>(null)
+  const editorRef = useRef<HTMLDivElement>(null)
+  const lastSyncedContentRef = useRef<string>('')
 
   const [uploadingImage, setUploadingImage] = useState(false)
   const [showMobileSidebar, setShowMobileSidebar] = useState(false)
+
+  // Sync editor content when article.content changes externally (restore, initial load)
+  useEffect(() => {
+    if (editorRef.current && editorMode === 'visual') {
+      const content = article.content || '<p>Start writing your article...</p>'
+      if (lastSyncedContentRef.current !== content) {
+        editorRef.current.innerHTML = content
+        lastSyncedContentRef.current = content
+      }
+    }
+  }, [article.content, editorMode])
 
   // Upload image to WP media library, returns URL
   const uploadToWP = async (file: File): Promise<string | null> => {
@@ -154,9 +167,8 @@ export default function ArticleEditor({
       const url = await uploadToWP(file)
       if (!url) return
       if (editorMode === 'visual') {
-        const editor = document.getElementById('visual-editor')
-        if (editor) {
-          editor.focus()
+        if (editorRef.current) {
+          editorRef.current.focus()
           document.execCommand('insertImage', false, url)
           setHasUnsavedChanges(true)
         }
@@ -236,11 +248,16 @@ export default function ArticleEditor({
 
   // Save article - send only editable fields, not the full object
   const handleSave = async () => {
+    // Sync DOM content to state before saving (visual mode may have unsaved DOM changes)
+    const currentContent = (editorMode === 'visual' && editorRef.current)
+      ? editorRef.current.innerHTML
+      : article.content
+
     setIsSaving(true)
     try {
       const editableFields: Partial<Article> = {
         title: article.title,
-        content: article.content,
+        content: currentContent,
         keyword: article.keyword,
         seo_title: article.seo_title,
         seo_description: article.seo_description,
@@ -309,9 +326,8 @@ export default function ArticleEditor({
     const text = linkText || linkUrl
 
     if (editorMode === 'visual') {
-      const editor = document.getElementById('visual-editor')
-      if (editor && savedSelectionRef.current) {
-        editor.focus()
+      if (editorRef.current && savedSelectionRef.current) {
+        editorRef.current.focus()
         const sel = window.getSelection()
         if (sel) {
           sel.removeAllRanges()
@@ -340,272 +356,38 @@ export default function ArticleEditor({
     setShowLinkDialog(false)
   }
 
-  // === DOM-based formatting engine ===
+  // === Formatting engine using execCommand (reliable with ref-based editor) ===
 
-  // Helper: get the editor element
-  const getEditor = () => document.getElementById('visual-editor')
-
-  // Helper: get current selection within editor
-  const getEditorSelection = () => {
+  // Helper: wrap selection with inline tag (for code)
+  const wrapWithCode = () => {
     const sel = window.getSelection()
-    const editor = getEditor()
-    if (!sel || !editor || sel.rangeCount === 0) return null
+    if (!sel || sel.rangeCount === 0) return
     const range = sel.getRangeAt(0)
-    // Verify selection is inside our editor
-    if (!editor.contains(range.commonAncestorContainer)) return null
-    return { sel, range }
-  }
+    const selectedText = range.toString()
+    if (!selectedText) return
 
-  // Helper: find the closest block-level parent of a node within the editor
-  const getBlockParent = (node: Node): HTMLElement | null => {
-    const editor = getEditor()
-    if (!editor) return null
-    let current: Node | null = node
-    const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'BLOCKQUOTE', 'DIV', 'PRE', 'UL', 'OL']
-    while (current && current !== editor) {
-      if (current.nodeType === Node.ELEMENT_NODE && blockTags.includes((current as HTMLElement).tagName)) {
-        return current as HTMLElement
-      }
-      current = current.parentNode
-    }
-    return null
-  }
-
-  // Helper: get all block elements that overlap the current selection
-  const getSelectedBlocks = (): HTMLElement[] => {
-    const result = getEditorSelection()
-    if (!result) return []
-    const { range } = result
-    const editor = getEditor()
-    if (!editor) return []
-
-    const blocks: HTMLElement[] = []
-    const startBlock = getBlockParent(range.startContainer)
-    const endBlock = getBlockParent(range.endContainer)
-
-    if (!startBlock && !endBlock) {
-      // Text directly in editor, wrap in <p>
-      return []
-    }
-
-    // Walk through editor's children to find blocks in selection range
-    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_ELEMENT, {
-      acceptNode: (node) => {
-        const el = node as HTMLElement
-        const tag = el.tagName
-        if (['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'BLOCKQUOTE', 'DIV', 'PRE'].includes(tag)) {
-          if (range.intersectsNode(el)) {
-            return NodeFilter.FILTER_ACCEPT
-          }
-        }
-        return NodeFilter.FILTER_SKIP
-      }
-    })
-
-    let node: Node | null
-    while ((node = walker.nextNode())) {
-      blocks.push(node as HTMLElement)
-    }
-
-    // If no blocks found but we have a startBlock, use it
-    if (blocks.length === 0 && startBlock) {
-      blocks.push(startBlock)
-    }
-
-    return blocks
-  }
-
-  // Helper: wrap inline selection with a tag
-  const wrapSelectionWith = (tagName: string) => {
-    const result = getEditorSelection()
-    if (!result) return
-    const { sel, range } = result
-
-    // Check if already wrapped — toggle off
-    let parentEl: Node | null = range.commonAncestorContainer
-    while (parentEl && parentEl !== getEditor()) {
-      if (parentEl.nodeType === Node.ELEMENT_NODE && (parentEl as HTMLElement).tagName === tagName.toUpperCase()) {
-        // Unwrap: replace the element with its contents
-        const parent = parentEl.parentNode
-        if (parent) {
-          while (parentEl.firstChild) {
-            parent.insertBefore(parentEl.firstChild, parentEl)
-          }
-          parent.removeChild(parentEl)
-        }
-        setHasUnsavedChanges(true)
+    // Check if already in <code> — toggle off
+    let parent: Node | null = range.commonAncestorContainer
+    while (parent && parent !== editorRef.current) {
+      if (parent.nodeType === Node.ELEMENT_NODE && (parent as HTMLElement).tagName === 'CODE') {
+        const textNode = document.createTextNode((parent as HTMLElement).textContent || '')
+        parent.parentNode?.replaceChild(textNode, parent)
         return
       }
-      parentEl = parentEl.parentNode
+      parent = parent.parentNode
     }
 
-    // Wrap selection
-    const wrapper = document.createElement(tagName)
+    const code = document.createElement('code')
     try {
-      range.surroundContents(wrapper)
+      range.surroundContents(code)
     } catch {
-      // surroundContents fails when selection crosses element boundaries
-      // Extract and re-insert
       const fragment = range.extractContents()
-      wrapper.appendChild(fragment)
-      range.insertNode(wrapper)
+      code.appendChild(fragment)
+      range.insertNode(code)
     }
-    sel.removeAllRanges()
-    const newRange = document.createRange()
-    newRange.selectNodeContents(wrapper)
-    sel.addRange(newRange)
-    setHasUnsavedChanges(true)
   }
 
-  // Convert selected blocks to heading/paragraph
-  const formatAsBlock = (tagName: string) => {
-    const editor = getEditor()
-    if (!editor) return
-    const result = getEditorSelection()
-    if (!result) return
-    const { sel, range } = result
-
-    const blocks = getSelectedBlocks()
-
-    if (blocks.length === 0) {
-      // No block parent — wrap current selection in a new block
-      const newBlock = document.createElement(tagName)
-      const fragment = range.extractContents()
-      newBlock.appendChild(fragment)
-      range.insertNode(newBlock)
-      sel.removeAllRanges()
-      const r = document.createRange()
-      r.selectNodeContents(newBlock)
-      sel.addRange(r)
-    } else {
-      // Replace each block with the new tag
-      blocks.forEach(block => {
-        // Don't convert <li> items, convert their parent list instead
-        if (block.tagName === 'LI') return
-        const newBlock = document.createElement(tagName)
-        newBlock.innerHTML = block.innerHTML
-        block.parentNode?.replaceChild(newBlock, block)
-      })
-    }
-    setHasUnsavedChanges(true)
-  }
-
-  // Convert selection to a list (ul or ol)
-  const formatAsList = (listTag: 'ul' | 'ol') => {
-    const editor = getEditor()
-    if (!editor) return
-    const result = getEditorSelection()
-    if (!result) return
-    const { sel, range } = result
-
-    const blocks = getSelectedBlocks()
-
-    // Check if already in a list of the same type — toggle off
-    if (blocks.length > 0 && blocks[0].tagName === 'LI') {
-      const parentList = blocks[0].parentElement
-      if (parentList && parentList.tagName === listTag.toUpperCase()) {
-        // Unwrap: convert each <li> back to <p>
-        const items = Array.from(parentList.children)
-        const parent = parentList.parentNode
-        items.forEach(li => {
-          const p = document.createElement('p')
-          p.innerHTML = li.innerHTML
-          parent?.insertBefore(p, parentList)
-        })
-        parent?.removeChild(parentList)
-        setHasUnsavedChanges(true)
-        return
-      }
-      // Different list type — just change the wrapper
-      if (parentList) {
-        const newList = document.createElement(listTag)
-        newList.innerHTML = parentList.innerHTML
-        parentList.parentNode?.replaceChild(newList, parentList)
-        setHasUnsavedChanges(true)
-        return
-      }
-    }
-
-    // Create list from selected blocks or selection
-    const list = document.createElement(listTag)
-
-    if (blocks.length === 0) {
-      // No blocks — wrap current text
-      const li = document.createElement('li')
-      const fragment = range.extractContents()
-      li.appendChild(fragment)
-      list.appendChild(li)
-      range.insertNode(list)
-    } else {
-      // Convert each block to <li>
-      const firstBlock = blocks[0]
-      blocks.forEach(block => {
-        if (block.tagName === 'LI') return // skip if already list items
-        const li = document.createElement('li')
-        li.innerHTML = block.innerHTML
-        list.appendChild(li)
-        if (block !== firstBlock) {
-          block.parentNode?.removeChild(block)
-        }
-      })
-      firstBlock.parentNode?.replaceChild(list, firstBlock)
-    }
-
-    setHasUnsavedChanges(true)
-  }
-
-  // Format as blockquote
-  const formatAsQuote = () => {
-    const editor = getEditor()
-    if (!editor) return
-    const result = getEditorSelection()
-    if (!result) return
-    const { range } = result
-
-    const blocks = getSelectedBlocks()
-
-    // Check if already in blockquote — toggle off
-    if (blocks.length > 0) {
-      let bq: HTMLElement | null = blocks[0]
-      while (bq && bq !== editor) {
-        if (bq.tagName === 'BLOCKQUOTE') {
-          // Unwrap blockquote
-          const parent = bq.parentNode
-          while (bq.firstChild) {
-            parent?.insertBefore(bq.firstChild, bq)
-          }
-          parent?.removeChild(bq)
-          setHasUnsavedChanges(true)
-          return
-        }
-        bq = bq.parentElement
-      }
-    }
-
-    const blockquote = document.createElement('blockquote')
-
-    if (blocks.length === 0) {
-      const fragment = range.extractContents()
-      const p = document.createElement('p')
-      p.appendChild(fragment)
-      blockquote.appendChild(p)
-      range.insertNode(blockquote)
-    } else {
-      const firstBlock = blocks[0]
-      blocks.forEach(block => {
-        const clone = block.cloneNode(true) as HTMLElement
-        blockquote.appendChild(clone)
-        if (block !== firstBlock) {
-          block.parentNode?.removeChild(block)
-        }
-      })
-      firstBlock.parentNode?.replaceChild(blockquote, firstBlock)
-    }
-
-    setHasUnsavedChanges(true)
-  }
-
-  // Main format dispatcher
+  // Main format dispatcher — uses execCommand for reliability
   const formatText = (format: string) => {
     if (format === 'link') {
       openLinkDialog()
@@ -617,40 +399,38 @@ export default function ArticleEditor({
     }
 
     if (editorMode === 'visual') {
-      const editor = getEditor()
-      if (!editor) return
-      editor.focus()
-
+      // Don't call editor.focus() — onMouseDown+preventDefault preserves selection
       // Heading / paragraph formats
       if (['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(format)) {
-        formatAsBlock(format)
+        document.execCommand('formatBlock', false, `<${format}>`)
+        setHasUnsavedChanges(true)
         return
       }
 
       switch (format) {
         case 'bold':
-          wrapSelectionWith('strong')
+          document.execCommand('bold')
           break
         case 'italic':
-          wrapSelectionWith('em')
+          document.execCommand('italic')
           break
         case 'underline':
-          wrapSelectionWith('u')
+          document.execCommand('underline')
           break
         case 'strikethrough':
-          wrapSelectionWith('s')
+          document.execCommand('strikeThrough')
           break
         case 'list':
-          formatAsList('ul')
+          document.execCommand('insertUnorderedList')
           break
         case 'ordered-list':
-          formatAsList('ol')
+          document.execCommand('insertOrderedList')
           break
         case 'quote':
-          formatAsQuote()
+          document.execCommand('formatBlock', false, '<blockquote>')
           break
         case 'code':
-          wrapSelectionWith('code')
+          wrapWithCode()
           break
         case 'undo':
           document.execCommand('undo')
@@ -986,11 +766,14 @@ export default function ArticleEditor({
           {/* Left: Editor (70%) */}
           <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 md:py-6">
             {/* Formatting Toolbar — sticky */}
-            <div className="flex items-center gap-1 mb-4 p-2 bg-gray-50 rounded-lg border border-gray-200 sticky top-0 z-10 overflow-x-auto">
+            <div className="flex items-center gap-1 mb-4 p-2 bg-gray-50 rounded-lg border border-gray-200 sticky top-0 z-10 flex-wrap md:flex-nowrap md:overflow-x-auto">
               {/* Visual / Code toggle */}
-              <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden mr-2">
+              <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden mr-2 shrink-0">
                 <button
-                  onClick={() => setEditorMode('visual')}
+                  onClick={() => {
+                    // Switching to visual: content will be set via useEffect
+                    setEditorMode('visual')
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1 transition-colors ${
                     editorMode === 'visual' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'
                   }`}
@@ -999,7 +782,15 @@ export default function ArticleEditor({
                   <MonitorPlay size={14} /> Visual
                 </button>
                 <button
-                  onClick={() => setEditorMode('code')}
+                  onClick={() => {
+                    // Sync DOM to state before switching to code mode
+                    if (editorRef.current) {
+                      const html = editorRef.current.innerHTML
+                      lastSyncedContentRef.current = html
+                      setArticle(prev => ({ ...prev, content: html }))
+                    }
+                    setEditorMode('code')
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1 transition-colors ${
                     editorMode === 'code' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'
                   }`}
@@ -1165,6 +956,7 @@ export default function ArticleEditor({
             <div className="mb-6">
               {editorMode === 'visual' ? (
                 <div
+                  ref={editorRef}
                   id="visual-editor"
                   className="w-full min-h-[300px] md:min-h-[600px] border border-gray-200 rounded-lg px-4 md:px-6 py-4 text-base leading-relaxed focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent overflow-y-auto bg-white prose prose-base max-w-none
                     prose-headings:text-gray-900 prose-headings:font-bold prose-headings:mt-6 prose-headings:mb-3
@@ -1181,13 +973,14 @@ export default function ArticleEditor({
                     prose-img:rounded-lg prose-img:shadow-sm prose-img:my-4"
                   contentEditable
                   suppressContentEditableWarning
-                  onInput={(e) => {
+                  onInput={() => {
                     setHasUnsavedChanges(true)
                   }}
                   onBlur={(e) => {
-                    updateField('content', e.currentTarget.innerHTML)
+                    const html = e.currentTarget.innerHTML
+                    lastSyncedContentRef.current = html
+                    updateField('content', html)
                   }}
-                  dangerouslySetInnerHTML={{ __html: article.content || '<p>Start writing your article...</p>' }}
                 />
               ) : (
                 <textarea
