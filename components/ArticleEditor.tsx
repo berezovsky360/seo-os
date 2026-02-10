@@ -24,6 +24,9 @@ import {
   FileText,
   Wand2,
   RefreshCw,
+  Heading,
+  ChevronDown,
+  ExternalLink,
 } from 'lucide-react'
 import SEOMetaEditor from './SEOMetaEditor'
 import SERPPreview from './SERPPreview'
@@ -119,17 +122,36 @@ export default function ArticleEditor({
   const featuredImageInputRef = useRef<HTMLInputElement>(null)
   const inlineImageInputRef = useRef<HTMLInputElement>(null)
 
-  const handleInlineImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [uploadingImage, setUploadingImage] = useState(false)
+
+  // Upload image to WP media library, returns URL
+  const uploadToWP = async (file: File): Promise<string | null> => {
+    const siteId = article.site_id
+    if (!siteId) return null
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`/api/sites/${siteId}/upload-media`, {
+      method: 'POST',
+      body: formData,
+    })
+    const data = await res.json()
+    if (!res.ok || !data.success) throw new Error(data.error || 'Upload failed')
+    return data.url
+  }
+
+  const handleInlineImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = reader.result as string
+    e.target.value = ''
+    setUploadingImage(true)
+    try {
+      const url = await uploadToWP(file)
+      if (!url) return
       if (editorMode === 'visual') {
         const editor = document.getElementById('visual-editor')
         if (editor) {
           editor.focus()
-          document.execCommand('insertImage', false, dataUrl)
+          document.execCommand('insertImage', false, url)
           setHasUnsavedChanges(true)
         }
       } else {
@@ -137,26 +159,42 @@ export default function ArticleEditor({
         if (!textarea) return
         const pos = textarea.selectionStart
         const current = article.content || ''
-        const imgTag = `<img src="${dataUrl}" alt="" />`
+        const imgTag = `<img src="${url}" alt="" />`
         updateField('content', current.substring(0, pos) + imgTag + current.substring(pos))
       }
+    } catch (err) {
+      alert(`Image upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setUploadingImage(false)
     }
-    reader.readAsDataURL(file)
-    e.target.value = ''
   }
 
-  const handleFeaturedImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFeaturedImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = reader.result as string
-      setGeneratedCoverUrl(dataUrl)
-      setArticle(prev => ({ ...prev, og_image_url: dataUrl }))
+    setUploadingImage(true)
+    try {
+      const url = await uploadToWP(file)
+      if (!url) return
+      setGeneratedCoverUrl(url)
+      setArticle(prev => ({ ...prev, og_image_url: url }))
       setHasUnsavedChanges(true)
+    } catch (err) {
+      alert(`Image upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setUploadingImage(false)
     }
-    reader.readAsDataURL(file)
   }
+
+  // Link dialog state
+  const [showLinkDialog, setShowLinkDialog] = useState(false)
+  const [linkUrl, setLinkUrl] = useState('')
+  const [linkText, setLinkText] = useState('')
+  const [linkTarget, setLinkTarget] = useState(false)
+  const [linkNoFollow, setLinkNoFollow] = useState(false)
+  const [linkSponsored, setLinkSponsored] = useState(false)
+  const savedSelectionRef = useRef<Range | null>(null)
+  const [showHeadingMenu, setShowHeadingMenu] = useState(false)
 
   // Version history state
   const [versions, setVersions] = useState<VersionEntry[]>([])
@@ -242,8 +280,80 @@ export default function ArticleEditor({
     }
   }
 
+  // Open link dialog — save current selection so we can restore it
+  const openLinkDialog = () => {
+    const sel = window.getSelection()
+    if (sel && sel.rangeCount > 0) {
+      savedSelectionRef.current = sel.getRangeAt(0).cloneRange()
+      setLinkText(sel.toString())
+    }
+    setLinkUrl('')
+    setLinkTarget(false)
+    setLinkNoFollow(false)
+    setLinkSponsored(false)
+    setShowLinkDialog(true)
+  }
+
+  // Insert link from dialog
+  const insertLink = () => {
+    if (!linkUrl) return
+    const rel = [linkNoFollow ? 'nofollow' : '', linkSponsored ? 'sponsored' : ''].filter(Boolean).join(' ')
+    const targetAttr = linkTarget ? ' target="_blank"' : ''
+    const relAttr = rel ? ` rel="${rel}"` : ''
+    const text = linkText || linkUrl
+
+    if (editorMode === 'visual') {
+      const editor = document.getElementById('visual-editor')
+      if (editor && savedSelectionRef.current) {
+        editor.focus()
+        const sel = window.getSelection()
+        if (sel) {
+          sel.removeAllRanges()
+          sel.addRange(savedSelectionRef.current)
+        }
+        // Create anchor element with attributes
+        const anchor = document.createElement('a')
+        anchor.href = linkUrl
+        anchor.textContent = text
+        if (linkTarget) anchor.target = '_blank'
+        if (rel) anchor.rel = rel
+        savedSelectionRef.current.deleteContents()
+        savedSelectionRef.current.insertNode(anchor)
+        setHasUnsavedChanges(true)
+      }
+    } else {
+      const textarea = document.getElementById('article-content') as HTMLTextAreaElement
+      if (textarea) {
+        const start = textarea.selectionStart
+        const end = textarea.selectionEnd
+        const current = article.content || ''
+        const tag = `<a href="${linkUrl}"${targetAttr}${relAttr}>${text}</a>`
+        updateField('content', current.substring(0, start) + tag + current.substring(end))
+      }
+    }
+    setShowLinkDialog(false)
+  }
+
   // Format toolbar buttons
   const formatText = (format: string) => {
+    // Heading formats
+    if (format.startsWith('h') || format === 'p') {
+      const tag = format === 'p' ? 'p' : format
+      if (editorMode === 'visual') {
+        document.execCommand('formatBlock', false, tag)
+      } else {
+        const textarea = document.getElementById('article-content') as HTMLTextAreaElement
+        if (!textarea) return
+        const start = textarea.selectionStart
+        const end = textarea.selectionEnd
+        const selectedText = (article.content || '').substring(start, end) || 'Heading'
+        const current = article.content || ''
+        const wrapped = `<${tag}>${selectedText}</${tag}>`
+        updateField('content', current.substring(0, start) + wrapped + current.substring(end))
+      }
+      return
+    }
+
     if (editorMode === 'visual') {
       // Visual mode: use execCommand on contentEditable div
       switch (format) {
@@ -254,9 +364,8 @@ export default function ArticleEditor({
           document.execCommand('italic')
           break
         case 'link':
-          const linkUrl = prompt('Enter URL:')
-          if (linkUrl) document.execCommand('createLink', false, linkUrl)
-          break
+          openLinkDialog()
+          return
         case 'list':
           document.execCommand('insertUnorderedList')
           break
@@ -264,7 +373,6 @@ export default function ArticleEditor({
           document.execCommand('formatBlock', false, 'blockquote')
           break
         case 'code':
-          // Wrap selection in <code> tag
           const selection = window.getSelection()
           if (selection && selection.rangeCount > 0) {
             const range = selection.getRangeAt(0)
@@ -276,9 +384,6 @@ export default function ArticleEditor({
           inlineImageInputRef.current?.click()
           return
       }
-      // Don't sync to state here — execCommand already modified the DOM visually.
-      // State syncs on blur via onBlur handler, avoiding React re-render conflicts
-      // with contentEditable.
       return
     }
 
@@ -299,9 +404,8 @@ export default function ArticleEditor({
         formattedText = `<em>${selectedText}</em>`
         break
       case 'link':
-        const url = prompt('Enter URL:')
-        if (url) formattedText = `<a href="${url}">${selectedText || url}</a>`
-        break
+        openLinkDialog()
+        return
       case 'list':
         formattedText = `<ul>\n  <li>${selectedText || 'List item'}</li>\n</ul>`
         break
@@ -621,6 +725,42 @@ export default function ArticleEditor({
                   <FileCode size={14} /> Code
                 </button>
               </div>
+              {/* Heading dropdown */}
+              <div className="relative">
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); setShowHeadingMenu(!showHeadingMenu) }}
+                  className="flex items-center gap-1 px-2 py-1.5 hover:bg-white rounded transition-colors text-sm font-medium text-gray-700"
+                  title="Headings"
+                >
+                  <Heading size={16} />
+                  <ChevronDown size={12} />
+                </button>
+                {showHeadingMenu && (
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[140px]">
+                    {[
+                      { tag: 'p', label: 'Paragraph', cls: 'text-sm' },
+                      { tag: 'h1', label: 'Heading 1', cls: 'text-lg font-bold' },
+                      { tag: 'h2', label: 'Heading 2', cls: 'text-base font-bold' },
+                      { tag: 'h3', label: 'Heading 3', cls: 'text-sm font-bold' },
+                      { tag: 'h4', label: 'Heading 4', cls: 'text-sm font-semibold' },
+                      { tag: 'h5', label: 'Heading 5', cls: 'text-xs font-semibold' },
+                      { tag: 'h6', label: 'Heading 6', cls: 'text-xs font-medium' },
+                    ].map(({ tag, label, cls }) => (
+                      <button
+                        key={tag}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          formatText(tag)
+                          setShowHeadingMenu(false)
+                        }}
+                        className={`w-full text-left px-3 py-1.5 hover:bg-gray-100 transition-colors ${cls}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="w-px h-6 bg-gray-300 mx-1" />
               <button
                 onMouseDown={(e) => { e.preventDefault(); formatText('bold') }}
@@ -671,7 +811,7 @@ export default function ArticleEditor({
                 className="p-2 hover:bg-white rounded transition-colors"
                 title="Insert Image"
               >
-                <ImageIcon size={18} />
+                {uploadingImage ? <Loader2 size={18} className="animate-spin" /> : <ImageIcon size={18} />}
               </button>
             </div>
 
@@ -1252,6 +1392,84 @@ export default function ArticleEditor({
             </div>
           </div>
         </div>
+
+        {/* Link Dialog */}
+        {showLinkDialog && (
+          <div className="fixed inset-0 bg-black/30 z-[60] flex items-center justify-center" onClick={() => setShowLinkDialog(false)}>
+            <div className="bg-white rounded-xl shadow-2xl w-[420px] p-6" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Link2 size={20} />
+                Insert Link
+              </h3>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
+                  <input
+                    type="url"
+                    value={linkUrl}
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                    placeholder="https://example.com"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Link Text</label>
+                  <input
+                    type="text"
+                    value={linkText}
+                    onChange={(e) => setLinkText(e.target.value)}
+                    placeholder="Click here"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div className="flex flex-wrap gap-4 pt-1">
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input type="checkbox" checked={linkTarget} onChange={(e) => setLinkTarget(e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                    <ExternalLink size={14} />
+                    Open in new tab
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input type="checkbox" checked={linkNoFollow} onChange={(e) => setLinkNoFollow(e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                    nofollow
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input type="checkbox" checked={linkSponsored} onChange={(e) => setLinkSponsored(e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                    sponsored
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 mt-5">
+                <button
+                  onClick={() => setShowLinkDialog(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={insertLink}
+                  disabled={!linkUrl}
+                  className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Insert Link
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Upload Loading Overlay */}
+        {uploadingImage && (
+          <div className="fixed inset-0 bg-black/20 z-[60] flex items-center justify-center">
+            <div className="bg-white rounded-xl shadow-lg px-6 py-4 flex items-center gap-3">
+              <Loader2 size={20} className="animate-spin text-indigo-600" />
+              <span className="text-sm font-medium text-gray-700">Uploading to WordPress...</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
