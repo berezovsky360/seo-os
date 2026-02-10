@@ -564,33 +564,33 @@ export default function ArticleEditor({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full h-full max-w-[1800px] max-h-[95vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-0 md:p-4">
+      <div className="bg-white md:rounded-2xl shadow-2xl w-full h-full max-w-[1800px] max-h-full md:max-h-[95vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between px-3 md:px-6 py-3 md:py-4 border-b border-gray-200">
+          <div className="flex items-center gap-2 md:gap-4 min-w-0">
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
             >
               <ChevronLeft size={20} />
             </button>
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">
+            <div className="min-w-0">
+              <h2 className="text-base md:text-xl font-semibold text-gray-900 truncate">
                 {article.title || 'Untitled Article'}
               </h2>
               {lastSaved && (
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-gray-500 mt-0.5 hidden md:block">
                   Last saved {lastSaved.toLocaleTimeString()}
                 </p>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* SEO Score - show Rank Math score or preliminary */}
+          <div className="flex items-center gap-1.5 md:gap-3">
+            {/* SEO Score - show Rank Math score or preliminary (hidden on mobile) */}
             {(article.seo_score || article.preliminary_seo_score) && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg">
+              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg">
                 {article.seo_score ? (
                   <>
                     <span className="text-xs text-gray-600">Rank Math:</span>
@@ -613,52 +613,47 @@ export default function ArticleEditor({
               </div>
             )}
 
-            {/* Analyze Button */}
+            {/* Analyze Button — icon only on mobile */}
             <button
               onClick={handleAnalyze}
               disabled={isAnalyzing}
-              className="px-4 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="p-2 md:px-4 md:py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+              title="Analyze SEO"
             >
               {isAnalyzing ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  Analyzing...
-                </>
+                <Loader2 size={16} className="animate-spin" />
               ) : (
-                <>
-                  <Eye size={16} />
-                  Analyze SEO
-                </>
+                <Eye size={16} />
               )}
+              <span className="hidden md:inline">
+                {isAnalyzing ? 'Analyzing...' : 'Analyze SEO'}
+              </span>
             </button>
 
-            {/* Save Button */}
+            {/* Save Button — icon only on mobile */}
             <button
               onClick={handleSave}
               disabled={isSaving || !hasUnsavedChanges}
-              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="p-2 md:px-4 md:py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              title="Save Draft"
             >
               {isSaving ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  Saving...
-                </>
+                <Loader2 size={16} className="animate-spin" />
               ) : (
-                <>
-                  <Save size={16} />
-                  Save Draft
-                </>
+                <Save size={16} />
               )}
+              <span className="hidden md:inline">
+                {isSaving ? 'Saving...' : 'Save Draft'}
+              </span>
             </button>
 
-            {/* Publish / Update WP Button */}
+            {/* Publish / Update WP Button — icon only on mobile */}
             <button
               onClick={async () => {
                 if (!article.content || !article.title) {
                   alert('Please add title and content before publishing.')
                   return
                 }
-                // Save first to persist content to DB
                 setIsPublishing(true)
                 try {
                   await handleSave()
@@ -670,23 +665,24 @@ export default function ArticleEditor({
                 }
               }}
               disabled={isPublishing || isSaving}
-              className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 ${
+              className={`p-2 md:px-4 md:py-2 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 ${
                 article.wp_post_id
                   ? 'bg-blue-600 hover:bg-blue-700'
                   : 'bg-emerald-600 hover:bg-emerald-700'
               }`}
+              title={article.wp_post_id ? 'Update WP' : 'Publish'}
             >
               {isPublishing ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  {article.wp_post_id ? 'Updating...' : 'Publishing...'}
-                </>
+                <Loader2 size={16} className="animate-spin" />
               ) : (
-                <>
-                  <Send size={16} />
-                  {article.wp_post_id ? 'Update WP' : 'Publish'}
-                </>
+                <Send size={16} />
               )}
+              <span className="hidden md:inline">
+                {isPublishing
+                  ? (article.wp_post_id ? 'Updating...' : 'Publishing...')
+                  : (article.wp_post_id ? 'Update WP' : 'Publish')
+                }
+              </span>
             </button>
 
             <button
@@ -699,11 +695,11 @@ export default function ArticleEditor({
         </div>
 
         {/* Main Content Area */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
           {/* Left: Editor (70%) */}
-          <div className="flex-1 overflow-y-auto px-8 py-6">
-            {/* Formatting Toolbar */}
-            <div className="flex items-center gap-1 mb-4 p-2 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 md:py-6">
+            {/* Formatting Toolbar — sticky */}
+            <div className="flex items-center gap-1 mb-4 p-2 bg-gray-50 rounded-lg border border-gray-200 sticky top-0 z-10 overflow-x-auto">
               {/* Visual / Code toggle */}
               <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden mr-2">
                 <button
@@ -830,7 +826,7 @@ export default function ArticleEditor({
                 type="text"
                 value={article.title || ''}
                 onChange={(e) => updateField('title', e.target.value)}
-                className="w-full text-4xl font-bold border-none outline-none focus:ring-0 placeholder-gray-300"
+                className="w-full text-2xl md:text-4xl font-bold border-none outline-none focus:ring-0 placeholder-gray-300"
                 placeholder="Add title"
               />
               <div className="mt-2 text-sm text-gray-500">
@@ -843,7 +839,7 @@ export default function ArticleEditor({
               {editorMode === 'visual' ? (
                 <div
                   id="visual-editor"
-                  className="w-full min-h-[600px] border border-gray-200 rounded-lg px-6 py-4 text-base leading-relaxed focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent overflow-y-auto bg-white prose prose-sm max-w-none
+                  className="w-full min-h-[300px] md:min-h-[600px] border border-gray-200 rounded-lg px-4 md:px-6 py-4 text-base leading-relaxed focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent overflow-y-auto bg-white prose prose-sm max-w-none
                     prose-headings:text-gray-900 prose-p:text-gray-700 prose-a:text-indigo-600 prose-strong:text-gray-900
                     prose-img:rounded-lg prose-img:shadow-sm"
                   contentEditable
@@ -861,7 +857,7 @@ export default function ArticleEditor({
                   id="article-content"
                   value={article.content || ''}
                   onChange={(e) => updateField('content', e.target.value)}
-                  className="w-full min-h-[600px] border border-gray-200 rounded-lg px-4 py-3 text-sm font-mono leading-relaxed focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none bg-gray-50"
+                  className="w-full min-h-[300px] md:min-h-[600px] border border-gray-200 rounded-lg px-4 py-3 text-sm font-mono leading-relaxed focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none bg-gray-50"
                   placeholder="Start writing your article HTML..."
                 />
               )}
@@ -1001,8 +997,8 @@ export default function ArticleEditor({
             )}
           </div>
 
-          {/* Right: Sidebar (30%) */}
-          <div className="w-[400px] border-l border-gray-200 flex flex-col overflow-hidden">
+          {/* Right: Sidebar (30%) — stacks below on mobile */}
+          <div className="w-full md:w-[400px] border-t md:border-t-0 md:border-l border-gray-200 flex flex-col overflow-hidden shrink-0">
             {/* Tabs */}
             <div className="flex border-b border-gray-200">
               <button
@@ -1049,7 +1045,7 @@ export default function ArticleEditor({
             </div>
 
             {/* Tab Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6">
               {/* SEO Tab */}
               {activeTab === 'seo' && (
                 <div className="space-y-6">
@@ -1395,8 +1391,8 @@ export default function ArticleEditor({
 
         {/* Link Dialog */}
         {showLinkDialog && (
-          <div className="fixed inset-0 bg-black/30 z-[60] flex items-center justify-center" onClick={() => setShowLinkDialog(false)}>
-            <div className="bg-white rounded-xl shadow-2xl w-[420px] p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 bg-black/30 z-[60] flex items-center justify-center p-4" onClick={() => setShowLinkDialog(false)}>
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-[420px] p-4 md:p-6" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 <Link2 size={20} />
                 Insert Link
