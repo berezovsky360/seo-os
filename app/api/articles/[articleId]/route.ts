@@ -105,7 +105,7 @@ export async function PUT(
     // Whitelist only valid generated_articles columns
     const ALLOWED_FIELDS = [
       'keyword', 'title', 'seo_title', 'seo_description', 'content', 'word_count',
-      'status', 'wp_post_id', 'published_at',
+      'status', 'wp_post_id', 'published_at', 'slug',
       // Rank Math columns
       'seo_score', 'preliminary_seo_score', 'additional_keywords',
       'canonical_url', 'robots_meta',

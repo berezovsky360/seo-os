@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, description, trigger_event, trigger_conditions, actions, site_ids } = body
+    const { name, description, trigger_event, trigger_conditions, actions, site_ids, graph_layout } = body
 
     if (!name || !trigger_event || !actions || !Array.isArray(actions) || actions.length === 0) {
       return NextResponse.json(
@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
         trigger_conditions: trigger_conditions || {},
         actions,
         site_ids: site_ids || null,
+        graph_layout: graph_layout || null,
         enabled: true,
       })
       .select()

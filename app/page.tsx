@@ -6,17 +6,19 @@ import Sidebar from '@/components/Sidebar';
 import SiteDetails from '@/components/SiteDetails';
 import KeywordResearch from '@/components/KeywordResearch';
 import AuthorRotator from '@/components/AuthorRotator';
-import { MainKeywordsView, ArticleProductionView, FinishedArticlesView, LLMTrackerView } from '@/components/SEOViews';
+import { MainKeywordsView, LLMTrackerView } from '@/components/SEOViews';
 import AIGeneratorModal from '@/components/AIGeneratorModal';
 import Marketplace from '@/components/modules/marketplace/Marketplace';
 import KeyManagement from '@/components/modules/key-management/KeyManagement';
 import EventLog from '@/components/modules/event-log/EventLog';
 import SetupWizard from '@/components/modules/setup-wizard/SetupWizard';
-import BulkMetadataPush from '@/components/modules/rankmath-bridge/BulkMetadataPush';
+import RankMathBridgeSettings from '@/components/modules/rankmath-bridge/RankMathBridgeSettings';
 import RecipeList from '@/components/modules/recipes/RecipeList';
 import RankPulseDashboard from '@/components/modules/rank-pulse/RankPulseDashboard';
 import GSCDashboard from '@/components/modules/gsc-insights/GSCDashboard';
 import NanaBananaDashboard from '@/components/modules/nana-banana/NanaBananaDashboard';
+import DocumentationView from '@/components/modules/docs/DocumentationView';
+import CronJobList from '@/components/modules/cron/CronJobList';
 import ContentCalendar from '@/components/ContentCalendar';
 import { MOCK_SITES } from '@/constants';
 import { ViewState, Site, UserRole } from '@/types';
@@ -29,8 +31,6 @@ import { usePreferences } from '@/hooks/useEvents';
 const VIEW_TITLES: Partial<Record<ViewState, string>> = {
   calendar: 'Calendar',
   'keywords-main': 'Keyword Magic Tool',
-  production: 'Posts',
-  finished: 'Finished Articles',
   'llm-tracker': 'LLM Tracker',
   'keywords-db': 'Keyword Research',
   authors: 'Personas',
@@ -43,6 +43,8 @@ const VIEW_TITLES: Partial<Record<ViewState, string>> = {
   'rank-pulse': 'Rank Pulse',
   'gsc-insights': 'GSC Insights',
   'nana-banana': 'Nana Banana',
+  'docs': 'Documentation',
+  'cron-jobs': 'Cron Jobs',
 };
 
 // ====== URL helpers ======
@@ -69,6 +71,7 @@ export default function Home() {
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
   const [selectedSite, setSelectedSite] = useState<Site | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [setupDismissed, setSetupDismissed] = useState(false);
 
   // Navigation with URL sync
@@ -151,10 +154,6 @@ export default function Home() {
         return <ContentCalendar onBack={goBack} />;
       case 'keywords-main':
         return <MainKeywordsView onBack={goBack} />;
-      case 'production':
-        return <ArticleProductionView onBack={goBack} />;
-      case 'finished':
-        return <FinishedArticlesView onBack={goBack} />;
       case 'llm-tracker':
         return <LLMTrackerView onBack={goBack} />;
       case 'keywords-db':
@@ -169,7 +168,7 @@ export default function Home() {
         return <EventLog onBack={goBack} />;
       case 'bulk-metadata':
       case 'rankmath-bridge':
-        return <BulkMetadataPush onBack={goBack} />;
+        return <RankMathBridgeSettings onBack={goBack} />;
       case 'recipes':
         return <RecipeList onBack={goBack} />;
       case 'rank-pulse':
@@ -178,6 +177,10 @@ export default function Home() {
         return <GSCDashboard onBack={goBack} />;
       case 'nana-banana':
         return <NanaBananaDashboard onBack={goBack} />;
+      case 'docs':
+        return <DocumentationView onBack={goBack} />;
+      case 'cron-jobs':
+        return <CronJobList onBack={goBack} />;
       default:
         return dashboardView;
     }
@@ -192,6 +195,8 @@ export default function Home() {
         setUserRole={setUserRole}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(c => !c)}
       />
 
       <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full transition-all duration-300">

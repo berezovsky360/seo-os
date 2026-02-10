@@ -52,7 +52,19 @@ const CoreContext = createContext<CoreContextType | undefined>(undefined)
 // ====== Module sidebar definitions (static, from registry) ======
 
 const MODULE_SIDEBAR_MAP: Record<string, { section: string; sectionColor: string; label: string; viewState: string; order: number }> = {
-  // Modules are accessed via Marketplace — no sidebar entries
+  // Marketplace modules
+  'recipes': { section: 'Automation', sectionColor: 'bg-violet-500', label: 'Recipes', viewState: 'recipes', order: 1 },
+  'personas': { section: 'Content', sectionColor: 'bg-yellow-500', label: 'Personas', viewState: 'authors', order: 2 },
+  'llm-tracker': { section: 'Research', sectionColor: 'bg-cyan-500', label: 'LLM Tracker', viewState: 'llm-tracker', order: 4 },
+  'keyword-research': { section: 'Research', sectionColor: 'bg-cyan-500', label: 'Keyword Research', viewState: 'keywords-db', order: 1 },
+  'keyword-magic': { section: 'Research', sectionColor: 'bg-cyan-500', label: 'Keyword Magic Tool', viewState: 'keywords-main', order: 2 },
+  // 'docs' is rendered in the hardcoded System section of Sidebar.tsx
+  // Core modules
+  'rankmath-bridge': { section: 'SEO Tools', sectionColor: 'bg-blue-500', label: 'RankMath Bridge', viewState: 'bulk-metadata', order: 1 },
+  'rank-pulse': { section: 'Monitoring', sectionColor: 'bg-orange-500', label: 'Rank Pulse', viewState: 'rank-pulse', order: 1 },
+  'gsc-insights': { section: 'Monitoring', sectionColor: 'bg-purple-500', label: 'GSC Insights', viewState: 'gsc-insights', order: 2 },
+  'nana-banana': { section: 'Content', sectionColor: 'bg-yellow-500', label: 'Nana Banana', viewState: 'nana-banana', order: 1 },
+  'cron': { section: 'Automation', sectionColor: 'bg-violet-500', label: 'Cron Jobs', viewState: 'cron-jobs', order: 2 },
 }
 
 export function CoreProvider({ children }: { children: ReactNode }) {

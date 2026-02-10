@@ -2,8 +2,8 @@
 /**
  * Plugin Name: SEO OS Connector
  * Plugin URI: https://github.com/antigravity/seo-os-connector
- * Description: REST API bridge between SEO OS dashboard and WordPress. Exposes Rank Math SEO data, scores, and allows remote SEO management.
- * Version: 1.0.0
+ * Description: SEO management for WordPress — renders SEO meta tags, Open Graph, Twitter Cards, and Schema markup. Works standalone or alongside Rank Math.
+ * Version: 2.0.0
  * Author: ANTIGRAVITY
  * Author URI: https://antigravity.ua
  * License: GPL v2 or later
@@ -16,70 +16,371 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('SEO_OS_CONNECTOR_VERSION', '1.0.0');
+define('SEO_OS_CONNECTOR_VERSION', '2.0.0');
 define('SEO_OS_CONNECTOR_NAMESPACE', 'seo-os/v1');
 
+// ═══════════════════════════════════════════════════════════
+// 1. Meta Fields Definition
+// ═══════════════════════════════════════════════════════════
+
 /**
- * All Rank Math meta keys we read/write
+ * SEO OS own meta fields (stored as _seo_os_* in post_meta).
+ * These are the source of truth when SEO OS rendering mode is active.
  */
-function seo_os_get_rank_math_fields(): array {
+function seo_os_get_fields(): array {
     return [
-        // Basic SEO
-        'rank_math_title'              => ['type' => 'string', 'label' => 'SEO Title'],
-        'rank_math_description'        => ['type' => 'string', 'label' => 'Meta Description'],
-        'rank_math_focus_keyword'      => ['type' => 'string', 'label' => 'Focus Keyword'],
-        'rank_math_seo_score'          => ['type' => 'integer', 'label' => 'SEO Score'],
-
-        // Additional keywords
-        'rank_math_focus_keywords'     => ['type' => 'string', 'label' => 'Additional Keywords (comma-separated)'],
-
-        // Advanced SEO
-        'rank_math_canonical_url'      => ['type' => 'string', 'label' => 'Canonical URL'],
-        'rank_math_robots'             => ['type' => 'string', 'label' => 'Robots Meta'],
-
-        // Open Graph / Facebook
-        'rank_math_facebook_title'     => ['type' => 'string', 'label' => 'OG Title'],
-        'rank_math_facebook_description' => ['type' => 'string', 'label' => 'OG Description'],
-        'rank_math_facebook_image'     => ['type' => 'string', 'label' => 'OG Image URL'],
-
-        // Twitter Card
-        'rank_math_twitter_title'      => ['type' => 'string', 'label' => 'Twitter Title'],
-        'rank_math_twitter_description' => ['type' => 'string', 'label' => 'Twitter Description'],
-        'rank_math_twitter_image'      => ['type' => 'string', 'label' => 'Twitter Image URL'],
-        'rank_math_twitter_card_type'  => ['type' => 'string', 'label' => 'Twitter Card Type'],
-        'rank_math_twitter_use_facebook' => ['type' => 'string', 'label' => 'Twitter Use Facebook Data'],
-
-        // Content Analysis
-        'rank_math_readability_score'  => ['type' => 'integer', 'label' => 'Readability Score'],
-        'rank_math_contentai_score'    => ['type' => 'integer', 'label' => 'Content AI Score'],
-
-        // Schema
-        'rank_math_primary_category'   => ['type' => 'integer', 'label' => 'Primary Category ID'],
-        // Note: rank_math_schema_* keys (rank_math_schema_Article etc.) are managed by
-        // Rank Math internally as serialized arrays. Do NOT register or write them via REST API
-        // as it causes fatal errors in Rank Math's frontend schema renderer.
-
-        // Pillar Content
-        'rank_math_pillar_content'     => ['type' => 'string', 'label' => 'Pillar Content'],
-
-        // Breadcrumb
-        'rank_math_breadcrumb_title'   => ['type' => 'string', 'label' => 'Breadcrumb Title'],
+        '_seo_os_title'               => ['type' => 'string',  'label' => 'SEO Title'],
+        '_seo_os_description'         => ['type' => 'string',  'label' => 'Meta Description'],
+        '_seo_os_focus_keyword'       => ['type' => 'string',  'label' => 'Focus Keyword'],
+        '_seo_os_additional_keywords' => ['type' => 'string',  'label' => 'Additional Keywords'],
+        '_seo_os_canonical_url'       => ['type' => 'string',  'label' => 'Canonical URL'],
+        '_seo_os_robots'              => ['type' => 'string',  'label' => 'Robots Meta'],
+        '_seo_os_og_title'            => ['type' => 'string',  'label' => 'OG Title'],
+        '_seo_os_og_description'      => ['type' => 'string',  'label' => 'OG Description'],
+        '_seo_os_og_image'            => ['type' => 'string',  'label' => 'OG Image URL'],
+        '_seo_os_twitter_title'       => ['type' => 'string',  'label' => 'Twitter Title'],
+        '_seo_os_twitter_description' => ['type' => 'string',  'label' => 'Twitter Description'],
+        '_seo_os_twitter_image'       => ['type' => 'string',  'label' => 'Twitter Image URL'],
+        '_seo_os_twitter_card_type'   => ['type' => 'string',  'label' => 'Twitter Card Type'],
+        '_seo_os_schema_type'         => ['type' => 'string',  'label' => 'Schema Article Type'],
+        '_seo_os_schema_json'         => ['type' => 'string',  'label' => 'Custom Schema JSON-LD'],
+        '_seo_os_seo_score'           => ['type' => 'integer', 'label' => 'SEO Score'],
+        '_seo_os_readability_score'   => ['type' => 'integer', 'label' => 'Readability Score'],
     ];
 }
 
 /**
- * Register REST API routes
+ * Rank Math meta fields (for reading when RM is the active renderer).
  */
+function seo_os_get_rank_math_fields(): array {
+    return [
+        'rank_math_title'              => ['type' => 'string',  'label' => 'SEO Title'],
+        'rank_math_description'        => ['type' => 'string',  'label' => 'Meta Description'],
+        'rank_math_focus_keyword'      => ['type' => 'string',  'label' => 'Focus Keyword'],
+        'rank_math_seo_score'          => ['type' => 'integer', 'label' => 'SEO Score'],
+        'rank_math_focus_keywords'     => ['type' => 'string',  'label' => 'Additional Keywords'],
+        'rank_math_canonical_url'      => ['type' => 'string',  'label' => 'Canonical URL'],
+        'rank_math_robots'             => ['type' => 'string',  'label' => 'Robots Meta'],
+        'rank_math_facebook_title'     => ['type' => 'string',  'label' => 'OG Title'],
+        'rank_math_facebook_description' => ['type' => 'string', 'label' => 'OG Description'],
+        'rank_math_facebook_image'     => ['type' => 'string',  'label' => 'OG Image URL'],
+        'rank_math_twitter_title'      => ['type' => 'string',  'label' => 'Twitter Title'],
+        'rank_math_twitter_description' => ['type' => 'string', 'label' => 'Twitter Description'],
+        'rank_math_twitter_image'      => ['type' => 'string',  'label' => 'Twitter Image URL'],
+        'rank_math_twitter_card_type'  => ['type' => 'string',  'label' => 'Twitter Card Type'],
+        'rank_math_twitter_use_facebook' => ['type' => 'string', 'label' => 'Twitter Use Facebook'],
+        'rank_math_readability_score'  => ['type' => 'integer', 'label' => 'Readability Score'],
+        'rank_math_contentai_score'    => ['type' => 'integer', 'label' => 'Content AI Score'],
+        'rank_math_primary_category'   => ['type' => 'integer', 'label' => 'Primary Category ID'],
+        'rank_math_pillar_content'     => ['type' => 'string',  'label' => 'Pillar Content'],
+        'rank_math_breadcrumb_title'   => ['type' => 'string',  'label' => 'Breadcrumb Title'],
+    ];
+}
+
+// ═══════════════════════════════════════════════════════════
+// 2. Settings
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Get plugin settings with defaults.
+ */
+function seo_os_get_settings(): array {
+    $defaults = [
+        'seo_renderer'       => seo_os_is_rank_math_active() ? 'rankmath' : 'seo-os',
+        'render_schema'      => true,
+        'render_og'          => true,
+        'render_twitter'     => true,
+        'schema_default_type' => 'Article',
+        'separator'          => '—',
+    ];
+    $saved = get_option('seo_os_settings', []);
+    return wp_parse_args($saved, $defaults);
+}
+
+/**
+ * Check if SEO OS is the active renderer.
+ */
+function seo_os_is_renderer(): bool {
+    $settings = seo_os_get_settings();
+    return $settings['seo_renderer'] === 'seo-os';
+}
+
+/**
+ * Check if Rank Math is active.
+ */
+function seo_os_is_rank_math_active(): bool {
+    return defined('RANK_MATH_VERSION') || class_exists('\\RankMath\\RankMath');
+}
+
+// ═══════════════════════════════════════════════════════════
+// 3. SEO Head Rendering (when SEO OS mode is active)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Get an SEO field value with fallback chain:
+ * 1. _seo_os_* field
+ * 2. rank_math_* field (if RM installed)
+ * 3. Default value
+ */
+function seo_os_get_seo_value(int $post_id, string $field, string $default = ''): string {
+    // SEO OS own field
+    $seo_os_key = '_seo_os_' . $field;
+    $value = get_post_meta($post_id, $seo_os_key, true);
+    if (!empty($value)) {
+        return is_array($value) ? implode(', ', $value) : (string) $value;
+    }
+
+    // Rank Math fallback mapping
+    $rm_map = [
+        'title'              => 'rank_math_title',
+        'description'        => 'rank_math_description',
+        'focus_keyword'      => 'rank_math_focus_keyword',
+        'canonical_url'      => 'rank_math_canonical_url',
+        'robots'             => 'rank_math_robots',
+        'og_title'           => 'rank_math_facebook_title',
+        'og_description'     => 'rank_math_facebook_description',
+        'og_image'           => 'rank_math_facebook_image',
+        'twitter_title'      => 'rank_math_twitter_title',
+        'twitter_description' => 'rank_math_twitter_description',
+        'twitter_image'      => 'rank_math_twitter_image',
+        'twitter_card_type'  => 'rank_math_twitter_card_type',
+        'seo_score'          => 'rank_math_seo_score',
+        'readability_score'  => 'rank_math_readability_score',
+    ];
+
+    if (isset($rm_map[$field]) && seo_os_is_rank_math_active()) {
+        $rm_value = get_post_meta($post_id, $rm_map[$field], true);
+        if (!empty($rm_value)) {
+            return is_array($rm_value) ? implode(', ', $rm_value) : (string) $rm_value;
+        }
+    }
+
+    return $default;
+}
+
+/**
+ * Disable Rank Math's head output when SEO OS is the active renderer.
+ */
+add_action('template_redirect', function () {
+    if (!seo_os_is_renderer()) return;
+
+    // Remove Rank Math's head actions if it's active
+    if (seo_os_is_rank_math_active()) {
+        // Rank Math uses priority 1 for its head output
+        remove_all_actions('rank_math/head');
+        // Also try to remove the wp_head hooks Rank Math adds
+        add_filter('rank_math/frontend/title', '__return_false');
+        add_filter('rank_math/frontend/description', '__return_false');
+        add_filter('rank_math/json_ld', '__return_empty_array', 999);
+    }
+
+    // Also prevent default WP from outputting a title tag
+    // (we'll render our own)
+    remove_theme_support('title-tag');
+}, 1);
+
+/**
+ * Render <title> tag.
+ */
+add_filter('pre_get_document_title', function ($title) {
+    if (!seo_os_is_renderer() || !is_singular()) return $title;
+
+    $post_id = get_queried_object_id();
+    if (!$post_id) return $title;
+
+    $seo_title = seo_os_get_seo_value($post_id, 'title');
+    if (!empty($seo_title)) {
+        return $seo_title;
+    }
+
+    // Default: "Post Title — Site Name"
+    $settings = seo_os_get_settings();
+    $post = get_post($post_id);
+    return $post->post_title . ' ' . $settings['separator'] . ' ' . get_bloginfo('name');
+}, 1);
+
+/**
+ * Render SEO meta tags in <head>.
+ */
+add_action('wp_head', function () {
+    if (!seo_os_is_renderer()) return;
+    if (!is_singular()) return;
+
+    $post_id = get_queried_object_id();
+    if (!$post_id) return;
+
+    $post = get_post($post_id);
+    $settings = seo_os_get_settings();
+    $site_name = get_bloginfo('name');
+    $permalink = get_permalink($post_id);
+
+    echo "\n<!-- SEO OS Connector v" . SEO_OS_CONNECTOR_VERSION . " -->\n";
+
+    // Meta description
+    $description = seo_os_get_seo_value($post_id, 'description');
+    if (!empty($description)) {
+        echo '<meta name="description" content="' . esc_attr($description) . '" />' . "\n";
+    }
+
+    // Robots
+    $robots = seo_os_get_seo_value($post_id, 'robots', 'index, follow');
+    echo '<meta name="robots" content="' . esc_attr($robots) . '" />' . "\n";
+
+    // Canonical
+    $canonical = seo_os_get_seo_value($post_id, 'canonical_url');
+    $canonical = !empty($canonical) ? $canonical : $permalink;
+    echo '<link rel="canonical" href="' . esc_url($canonical) . '" />' . "\n";
+
+    // Open Graph
+    if ($settings['render_og']) {
+        $og_title = seo_os_get_seo_value($post_id, 'og_title');
+        $og_title = !empty($og_title) ? $og_title : seo_os_get_seo_value($post_id, 'title', $post->post_title);
+        $og_desc = seo_os_get_seo_value($post_id, 'og_description');
+        $og_desc = !empty($og_desc) ? $og_desc : $description;
+        $og_image = seo_os_get_seo_value($post_id, 'og_image');
+        $og_image = !empty($og_image) ? $og_image : get_the_post_thumbnail_url($post_id, 'full');
+
+        echo '<meta property="og:type" content="article" />' . "\n";
+        echo '<meta property="og:title" content="' . esc_attr($og_title) . '" />' . "\n";
+        if (!empty($og_desc)) {
+            echo '<meta property="og:description" content="' . esc_attr($og_desc) . '" />' . "\n";
+        }
+        echo '<meta property="og:url" content="' . esc_url($permalink) . '" />' . "\n";
+        echo '<meta property="og:site_name" content="' . esc_attr($site_name) . '" />' . "\n";
+        if (!empty($og_image)) {
+            echo '<meta property="og:image" content="' . esc_url($og_image) . '" />' . "\n";
+        }
+        echo '<meta property="article:published_time" content="' . esc_attr(get_the_date('c', $post_id)) . '" />' . "\n";
+        echo '<meta property="article:modified_time" content="' . esc_attr(get_the_modified_date('c', $post_id)) . '" />' . "\n";
+    }
+
+    // Twitter Card
+    if ($settings['render_twitter']) {
+        $tw_card = seo_os_get_seo_value($post_id, 'twitter_card_type', 'summary_large_image');
+        $tw_title = seo_os_get_seo_value($post_id, 'twitter_title');
+        $tw_title = !empty($tw_title) ? $tw_title : seo_os_get_seo_value($post_id, 'og_title', $post->post_title);
+        $tw_desc = seo_os_get_seo_value($post_id, 'twitter_description');
+        $tw_desc = !empty($tw_desc) ? $tw_desc : seo_os_get_seo_value($post_id, 'og_description', $description);
+        $tw_image = seo_os_get_seo_value($post_id, 'twitter_image');
+        $tw_image = !empty($tw_image) ? $tw_image : seo_os_get_seo_value($post_id, 'og_image');
+        if (empty($tw_image)) $tw_image = get_the_post_thumbnail_url($post_id, 'full');
+
+        echo '<meta name="twitter:card" content="' . esc_attr($tw_card) . '" />' . "\n";
+        echo '<meta name="twitter:title" content="' . esc_attr($tw_title) . '" />' . "\n";
+        if (!empty($tw_desc)) {
+            echo '<meta name="twitter:description" content="' . esc_attr($tw_desc) . '" />' . "\n";
+        }
+        if (!empty($tw_image)) {
+            echo '<meta name="twitter:image" content="' . esc_url($tw_image) . '" />' . "\n";
+        }
+    }
+
+    // Schema JSON-LD
+    if ($settings['render_schema']) {
+        $custom_schema = seo_os_get_seo_value($post_id, 'schema_json');
+        if (!empty($custom_schema)) {
+            // Custom schema from SEO OS
+            echo '<script type="application/ld+json">' . "\n";
+            echo $custom_schema . "\n";
+            echo '</script>' . "\n";
+        } else {
+            // Auto-generate Article schema
+            $schema_type = seo_os_get_seo_value($post_id, 'schema_type', $settings['schema_default_type']);
+            $seo_title = seo_os_get_seo_value($post_id, 'title', $post->post_title);
+            $featured_img = get_the_post_thumbnail_url($post_id, 'full');
+            $author_name = get_the_author_meta('display_name', $post->post_author);
+
+            $schema = [
+                '@context'       => 'https://schema.org',
+                '@type'          => $schema_type,
+                'headline'       => $seo_title,
+                'url'            => $permalink,
+                'datePublished'  => get_the_date('c', $post_id),
+                'dateModified'   => get_the_modified_date('c', $post_id),
+                'author'         => [
+                    '@type' => 'Person',
+                    'name'  => $author_name,
+                ],
+                'publisher'      => [
+                    '@type' => 'Organization',
+                    'name'  => $site_name,
+                ],
+                'mainEntityOfPage' => [
+                    '@type' => 'WebPage',
+                    '@id'   => $permalink,
+                ],
+            ];
+
+            if (!empty($description)) {
+                $schema['description'] = $description;
+            }
+
+            if (!empty($featured_img)) {
+                $schema['image'] = [
+                    '@type' => 'ImageObject',
+                    'url'   => $featured_img,
+                ];
+            }
+
+            // Add word count
+            $word_count = str_word_count(wp_strip_all_tags($post->post_content));
+            if ($word_count > 0) {
+                $schema['wordCount'] = $word_count;
+            }
+
+            echo '<script type="application/ld+json">' . "\n";
+            echo wp_json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+            echo "\n</script>\n";
+        }
+    }
+
+    echo "<!-- / SEO OS Connector -->\n";
+}, 1);
+
+/**
+ * Remove default WordPress canonical to avoid duplicates.
+ */
+add_action('wp', function () {
+    if (seo_os_is_renderer() && is_singular()) {
+        remove_action('wp_head', 'rel_canonical');
+    }
+});
+
+// ═══════════════════════════════════════════════════════════
+// 4. REST API Routes
+// ═══════════════════════════════════════════════════════════
+
 add_action('rest_api_init', function () {
 
-    // GET /seo-os/v1/ping - Health check
+    // GET /seo-os/v1/ping
     register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/ping', [
         'methods'             => 'GET',
         'callback'            => 'seo_os_ping',
         'permission_callback' => 'seo_os_check_permissions',
     ]);
 
-    // GET /seo-os/v1/posts - List posts with SEO data
+    // GET /seo-os/v1/info
+    register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/info', [
+        'methods'             => 'GET',
+        'callback'            => 'seo_os_get_info',
+        'permission_callback' => 'seo_os_check_permissions',
+    ]);
+
+    // GET/POST /seo-os/v1/settings
+    register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/settings', [
+        [
+            'methods'             => 'GET',
+            'callback'            => 'seo_os_get_settings_api',
+            'permission_callback' => 'seo_os_check_permissions',
+        ],
+        [
+            'methods'             => 'POST',
+            'callback'            => 'seo_os_update_settings_api',
+            'permission_callback' => 'seo_os_check_admin_permissions',
+        ],
+    ]);
+
+    // GET /seo-os/v1/posts
     register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/posts', [
         'methods'             => 'GET',
         'callback'            => 'seo_os_get_posts',
@@ -93,86 +394,75 @@ add_action('rest_api_init', function () {
         ],
     ]);
 
-    // GET /seo-os/v1/posts/{id}/meta - Get all Rank Math data for a post
+    // GET /seo-os/v1/posts/{id}/meta
     register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/posts/(?P<id>\d+)/meta', [
         'methods'             => 'GET',
         'callback'            => 'seo_os_get_post_meta',
         'permission_callback' => 'seo_os_check_permissions',
-        'args'                => [
-            'id' => ['required' => true, 'type' => 'integer'],
-        ],
+        'args'                => ['id' => ['required' => true, 'type' => 'integer']],
     ]);
 
-    // POST /seo-os/v1/posts/{id}/meta - Update Rank Math data for a post
+    // POST /seo-os/v1/posts/{id}/meta
     register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/posts/(?P<id>\d+)/meta', [
         'methods'             => 'POST',
         'callback'            => 'seo_os_update_post_meta',
         'permission_callback' => 'seo_os_check_edit_permissions',
-        'args'                => [
-            'id' => ['required' => true, 'type' => 'integer'],
-        ],
+        'args'                => ['id' => ['required' => true, 'type' => 'integer']],
     ]);
 
-    // GET /seo-os/v1/posts/{id}/score - Get/recalculate SEO score
+    // GET /seo-os/v1/posts/{id}/score
     register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/posts/(?P<id>\d+)/score', [
         'methods'             => 'GET',
         'callback'            => 'seo_os_get_post_score',
         'permission_callback' => 'seo_os_check_permissions',
-        'args'                => [
-            'id' => ['required' => true, 'type' => 'integer'],
-        ],
+        'args'                => ['id' => ['required' => true, 'type' => 'integer']],
     ]);
 
-    // GET /seo-os/v1/posts/{id}/head - Get rendered SEO head for a post
+    // GET /seo-os/v1/posts/{id}/head
     register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/posts/(?P<id>\d+)/head', [
         'methods'             => 'GET',
         'callback'            => 'seo_os_get_post_head',
         'permission_callback' => 'seo_os_check_permissions',
-        'args'                => [
-            'id' => ['required' => true, 'type' => 'integer'],
-        ],
-    ]);
-
-    // GET /seo-os/v1/info - Plugin & Rank Math info
-    register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/info', [
-        'methods'             => 'GET',
-        'callback'            => 'seo_os_get_info',
-        'permission_callback' => 'seo_os_check_permissions',
+        'args'                => ['id' => ['required' => true, 'type' => 'integer']],
     ]);
 });
 
-/**
- * Permission check: user must be logged in and can edit posts
- */
+// ═══════════════════════════════════════════════════════════
+// 5. Permission Checks
+// ═══════════════════════════════════════════════════════════
+
 function seo_os_check_permissions(): bool {
     return current_user_can('edit_posts');
 }
 
-/**
- * Permission check for write operations: must be able to edit posts
- */
 function seo_os_check_edit_permissions(): bool {
     return current_user_can('edit_posts');
 }
 
-/**
- * GET /ping - Health check
- */
+function seo_os_check_admin_permissions(): bool {
+    return current_user_can('manage_options');
+}
+
+// ═══════════════════════════════════════════════════════════
+// 6. REST API Callbacks
+// ═══════════════════════════════════════════════════════════
+
+/** GET /ping */
 function seo_os_ping(): WP_REST_Response {
     return new WP_REST_Response([
-        'status'  => 'ok',
-        'plugin'  => 'seo-os-connector',
-        'version' => SEO_OS_CONNECTOR_VERSION,
-        'wp'      => get_bloginfo('version'),
-        'rank_math' => seo_os_is_rank_math_active(),
+        'status'       => 'ok',
+        'plugin'       => 'seo-os-connector',
+        'version'      => SEO_OS_CONNECTOR_VERSION,
+        'wp'           => get_bloginfo('version'),
+        'rank_math'    => seo_os_is_rank_math_active(),
+        'seo_renderer' => seo_os_get_settings()['seo_renderer'],
     ], 200);
 }
 
-/**
- * GET /info - Detailed plugin and site info
- */
+/** GET /info */
 function seo_os_get_info(WP_REST_Request $request): WP_REST_Response {
-    $info = [
+    $settings = seo_os_get_settings();
+    return new WP_REST_Response([
         'connector_version' => SEO_OS_CONNECTOR_VERSION,
         'wordpress_version' => get_bloginfo('version'),
         'php_version'       => PHP_VERSION,
@@ -183,17 +473,53 @@ function seo_os_get_info(WP_REST_Request $request): WP_REST_Response {
         'total_drafts'      => wp_count_posts()->draft,
         'rank_math' => [
             'active'  => seo_os_is_rank_math_active(),
-            'version' => seo_os_is_rank_math_active() ? (defined('RANK_MATH_VERSION') ? RANK_MATH_VERSION : 'unknown') : null,
+            'version' => seo_os_is_rank_math_active() && defined('RANK_MATH_VERSION') ? RANK_MATH_VERSION : null,
         ],
-        'available_fields' => array_keys(seo_os_get_rank_math_fields()),
-    ];
-
-    return new WP_REST_Response($info, 200);
+        'seo_renderer'    => $settings['seo_renderer'],
+        'render_schema'   => $settings['render_schema'],
+        'render_og'       => $settings['render_og'],
+        'render_twitter'  => $settings['render_twitter'],
+        'available_fields' => array_merge(
+            array_keys(seo_os_get_fields()),
+            array_keys(seo_os_get_rank_math_fields())
+        ),
+    ], 200);
 }
 
-/**
- * GET /posts - List posts with SEO meta data
- */
+/** GET /settings */
+function seo_os_get_settings_api(): WP_REST_Response {
+    return new WP_REST_Response([
+        'success'  => true,
+        'settings' => seo_os_get_settings(),
+    ], 200);
+}
+
+/** POST /settings */
+function seo_os_update_settings_api(WP_REST_Request $request): WP_REST_Response {
+    $body = $request->get_json_params();
+    $current = seo_os_get_settings();
+
+    $allowed_keys = ['seo_renderer', 'render_schema', 'render_og', 'render_twitter', 'schema_default_type', 'separator'];
+    foreach ($allowed_keys as $key) {
+        if (isset($body[$key])) {
+            $current[$key] = $body[$key];
+        }
+    }
+
+    // Validate seo_renderer
+    if (!in_array($current['seo_renderer'], ['seo-os', 'rankmath'], true)) {
+        $current['seo_renderer'] = 'seo-os';
+    }
+
+    update_option('seo_os_settings', $current);
+
+    return new WP_REST_Response([
+        'success'  => true,
+        'settings' => $current,
+    ], 200);
+}
+
+/** GET /posts */
 function seo_os_get_posts(WP_REST_Request $request): WP_REST_Response {
     $args = [
         'post_type'      => 'post',
@@ -208,32 +534,9 @@ function seo_os_get_posts(WP_REST_Request $request): WP_REST_Response {
     $posts = [];
 
     foreach ($query->posts as $post) {
-        $seo_meta = seo_os_extract_rank_math_data($post->ID);
-
-        // Content analysis: count links and images
+        $seo_meta = seo_os_extract_all_seo_data($post->ID);
         $content = $post->post_content;
-        $site_url = get_site_url();
-
-        preg_match_all('/<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>/i', $content, $link_matches);
-        $all_links = $link_matches[1] ?? [];
-        $internal_links = 0;
-        $external_links = 0;
-        foreach ($all_links as $link) {
-            if (strpos($link, $site_url) === 0 || strpos($link, '/') === 0) {
-                $internal_links++;
-            } else {
-                $external_links++;
-            }
-        }
-
-        preg_match_all('/<img\s[^>]*>/i', $content, $img_matches);
-        $images_total = count($img_matches[0] ?? []);
-        $images_with_alt = 0;
-        foreach (($img_matches[0] ?? []) as $img_tag) {
-            if (preg_match('/alt=["\'][^"\']+["\']/', $img_tag)) {
-                $images_with_alt++;
-            }
-        }
+        $analysis = seo_os_analyze_content($content, $post->ID);
 
         $posts[] = [
             'id'              => $post->ID,
@@ -252,134 +555,108 @@ function seo_os_get_posts(WP_REST_Request $request): WP_REST_Response {
             'tags'            => wp_get_post_tags($post->ID, ['fields' => 'all']),
             'featured_image'  => get_the_post_thumbnail_url($post->ID, 'full'),
             'seo'             => $seo_meta,
-            'content_analysis' => [
-                'internal_links'  => $internal_links,
-                'external_links'  => $external_links,
-                'images_total'    => $images_total,
-                'images_with_alt' => $images_with_alt,
-            ],
+            'content_analysis' => $analysis,
         ];
     }
 
     return new WP_REST_Response([
-        'success'    => true,
-        'posts'      => $posts,
-        'total'      => (int) $query->found_posts,
-        'pages'      => (int) $query->max_num_pages,
-        'page'       => (int) $request->get_param('page'),
-        'per_page'   => (int) $request->get_param('per_page'),
+        'success'  => true,
+        'posts'    => $posts,
+        'total'    => (int) $query->found_posts,
+        'pages'    => (int) $query->max_num_pages,
+        'page'     => (int) $request->get_param('page'),
+        'per_page' => (int) $request->get_param('per_page'),
     ], 200);
 }
 
-/**
- * GET /posts/{id}/meta - Get all Rank Math SEO data for a post
- */
+/** GET /posts/{id}/meta */
 function seo_os_get_post_meta(WP_REST_Request $request): WP_REST_Response {
     $post_id = (int) $request->get_param('id');
     $post = get_post($post_id);
+    if (!$post) return new WP_REST_Response(['error' => 'Post not found'], 404);
 
-    if (!$post) {
-        return new WP_REST_Response(['error' => 'Post not found'], 404);
-    }
+    $seo_data = seo_os_extract_all_seo_data($post_id);
+    $analysis = seo_os_analyze_content($post->post_content, $post_id);
 
-    $seo_data = seo_os_extract_rank_math_data($post_id);
-
-    // Add post context
-    $seo_data['post_id']    = $post_id;
-    $seo_data['post_title'] = $post->post_title;
-    $seo_data['post_url']   = get_permalink($post_id);
+    $seo_data['post_id']     = $post_id;
+    $seo_data['post_title']  = $post->post_title;
+    $seo_data['post_url']    = get_permalink($post_id);
     $seo_data['post_status'] = $post->post_status;
-    $seo_data['word_count'] = str_word_count(wp_strip_all_tags($post->post_content));
+    $seo_data['word_count']  = str_word_count(wp_strip_all_tags($post->post_content));
+    $seo_data = array_merge($seo_data, $analysis);
 
-    // Count links in content
-    $content = $post->post_content;
-    $site_url = get_site_url();
-
-    preg_match_all('/<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>/i', $content, $matches);
-    $all_links = $matches[1] ?? [];
-    $internal = 0;
-    $external = 0;
-    foreach ($all_links as $link) {
-        if (strpos($link, $site_url) === 0 || strpos($link, '/') === 0) {
-            $internal++;
-        } else {
-            $external++;
-        }
-    }
-    $seo_data['internal_links_count'] = $internal;
-    $seo_data['external_links_count'] = $external;
-
-    // Count images and alt text
-    preg_match_all('/<img\s[^>]*>/i', $content, $img_matches);
-    $images_total = count($img_matches[0] ?? []);
-    $images_with_alt = 0;
-    foreach (($img_matches[0] ?? []) as $img_tag) {
-        if (preg_match('/alt=["\'][^"\']+["\']/', $img_tag)) {
-            $images_with_alt++;
-        }
-    }
-    $seo_data['images_count']     = $images_total;
-    $seo_data['images_alt_count'] = $images_with_alt;
-
-    return new WP_REST_Response([
-        'success' => true,
-        'meta'    => $seo_data,
-    ], 200);
+    return new WP_REST_Response(['success' => true, 'meta' => $seo_data], 200);
 }
 
-/**
- * POST /posts/{id}/meta - Update Rank Math SEO data for a post
- */
+/** POST /posts/{id}/meta — writes to _seo_os_* fields AND rank_math_* fields */
 function seo_os_update_post_meta(WP_REST_Request $request): WP_REST_Response {
     $post_id = (int) $request->get_param('id');
     $post = get_post($post_id);
-
-    if (!$post) {
-        return new WP_REST_Response(['error' => 'Post not found'], 404);
-    }
+    if (!$post) return new WP_REST_Response(['error' => 'Post not found'], 404);
 
     $body = $request->get_json_params();
-    if (empty($body)) {
-        return new WP_REST_Response(['error' => 'No data provided'], 400);
-    }
+    if (empty($body)) return new WP_REST_Response(['error' => 'No data provided'], 400);
 
-    $allowed_fields = seo_os_get_rank_math_fields();
+    $seo_os_fields = seo_os_get_fields();
+    $rm_fields = seo_os_get_rank_math_fields();
     $updated = [];
     $errors = [];
 
+    // Field name mapping: API key → (_seo_os_* key, rank_math_* key)
+    $field_map = [
+        'title'              => ['_seo_os_title',              'rank_math_title'],
+        'description'        => ['_seo_os_description',        'rank_math_description'],
+        'focus_keyword'      => ['_seo_os_focus_keyword',      'rank_math_focus_keyword'],
+        'additional_keywords' => ['_seo_os_additional_keywords', 'rank_math_focus_keywords'],
+        'canonical_url'      => ['_seo_os_canonical_url',      'rank_math_canonical_url'],
+        'robots'             => ['_seo_os_robots',             'rank_math_robots'],
+        'og_title'           => ['_seo_os_og_title',           'rank_math_facebook_title'],
+        'og_description'     => ['_seo_os_og_description',     'rank_math_facebook_description'],
+        'og_image'           => ['_seo_os_og_image',           'rank_math_facebook_image'],
+        'twitter_title'      => ['_seo_os_twitter_title',      'rank_math_twitter_title'],
+        'twitter_description' => ['_seo_os_twitter_description', 'rank_math_twitter_description'],
+        'twitter_image'      => ['_seo_os_twitter_image',      'rank_math_twitter_image'],
+        'twitter_card_type'  => ['_seo_os_twitter_card_type',  'rank_math_twitter_card_type'],
+        'schema_type'        => ['_seo_os_schema_type',        null],
+        'schema_json'        => ['_seo_os_schema_json',        null],
+        'seo_score'          => ['_seo_os_seo_score',          'rank_math_seo_score'],
+        'readability_score'  => ['_seo_os_readability_score',  'rank_math_readability_score'],
+    ];
+
     foreach ($body as $key => $value) {
-        // Allow both with and without 'rank_math_' prefix
-        $meta_key = $key;
-        if (strpos($key, 'rank_math_') !== 0) {
-            $meta_key = 'rank_math_' . $key;
+        // Strip common prefixes
+        $clean_key = str_replace(['rank_math_', '_seo_os_', 'facebook_'], '', $key);
+        // Map facebook_* → og_*
+        if (strpos($key, 'facebook_') !== false) {
+            $clean_key = 'og_' . str_replace('facebook_', '', $clean_key);
         }
 
-        if (!isset($allowed_fields[$meta_key])) {
+        if (isset($field_map[$clean_key])) {
+            [$seo_os_key, $rm_key] = $field_map[$clean_key];
+
+            // Sanitize
+            $sanitized = is_numeric($value) ? intval($value) : sanitize_text_field($value);
+
+            // Always write to SEO OS own field
+            update_post_meta($post_id, $seo_os_key, $sanitized);
+            $updated[$seo_os_key] = $sanitized;
+
+            // Also write to Rank Math field (keeps RM in sync)
+            if ($rm_key && seo_os_is_rank_math_active()) {
+                update_post_meta($post_id, $rm_key, $sanitized);
+                $updated[$rm_key] = $sanitized;
+            }
+        } elseif (isset($rm_fields[$key])) {
+            // Direct Rank Math key (backwards compat)
+            $sanitized = is_numeric($value) ? intval($value) : sanitize_text_field($value);
+            update_post_meta($post_id, $key, $sanitized);
+            $updated[$key] = $sanitized;
+        } else {
             $errors[] = "Unknown field: {$key}";
-            continue;
         }
-
-        $field_config = $allowed_fields[$meta_key];
-
-        // Type validation
-        if ($field_config['type'] === 'integer' && !is_numeric($value)) {
-            $errors[] = "Field {$key} must be numeric";
-            continue;
-        }
-
-        // Sanitize
-        if ($field_config['type'] === 'string') {
-            $value = sanitize_text_field($value);
-        } elseif ($field_config['type'] === 'integer') {
-            $value = intval($value);
-        }
-
-        update_post_meta($post_id, $meta_key, $value);
-        $updated[$meta_key] = $value;
     }
 
-    // Return updated data
-    $seo_data = seo_os_extract_rank_math_data($post_id);
+    $seo_data = seo_os_extract_all_seo_data($post_id);
 
     return new WP_REST_Response([
         'success' => true,
@@ -389,219 +666,220 @@ function seo_os_update_post_meta(WP_REST_Request $request): WP_REST_Response {
     ], 200);
 }
 
-/**
- * GET /posts/{id}/score - Get SEO score, attempt recalculation if Rank Math active
- */
+/** GET /posts/{id}/score */
 function seo_os_get_post_score(WP_REST_Request $request): WP_REST_Response {
     $post_id = (int) $request->get_param('id');
     $post = get_post($post_id);
+    if (!$post) return new WP_REST_Response(['error' => 'Post not found'], 404);
 
-    if (!$post) {
-        return new WP_REST_Response(['error' => 'Post not found'], 404);
-    }
-
-    $score_data = [
-        'post_id' => $post_id,
-        'seo_score' => null,
-        'readability_score' => null,
-        'content_ai_score' => null,
-        'focus_keyword' => null,
-        'source' => 'meta', // 'meta' or 'calculated'
-    ];
-
-    // Read stored scores from meta
-    $score_data['seo_score'] = (int) get_post_meta($post_id, 'rank_math_seo_score', true) ?: null;
-    $score_data['readability_score'] = (int) get_post_meta($post_id, 'rank_math_readability_score', true) ?: null;
-    $score_data['content_ai_score'] = (int) get_post_meta($post_id, 'rank_math_contentai_score', true) ?: null;
-    $score_data['focus_keyword'] = get_post_meta($post_id, 'rank_math_focus_keyword', true) ?: null;
-
-    // Try to get score via Rank Math API if available
-    if (seo_os_is_rank_math_active()) {
-        // Try using Rank Math's internal scoring
-        if (class_exists('\\RankMath\\Paper\\Paper')) {
-            try {
-                $paper = \RankMath\Paper\Paper::get();
-                if ($paper) {
-                    $score_data['source'] = 'rank_math_api';
-                }
-            } catch (\Exception $e) {
-                // Rank Math API not available for this context
-            }
-        }
-
-        // Try using the SEO analysis class
-        if (class_exists('\\RankMath\\SEO_Analysis\\SEO_Analyzer')) {
-            $score_data['analyzer_available'] = true;
-        }
-    }
-
-    // Content analysis details
     $content = $post->post_content;
-    $keyword = $score_data['focus_keyword'] ?? '';
-    $title = get_post_meta($post_id, 'rank_math_title', true) ?: $post->post_title;
-    $description = get_post_meta($post_id, 'rank_math_description', true) ?: '';
+    $keyword = seo_os_get_seo_value($post_id, 'focus_keyword');
+    $title = seo_os_get_seo_value($post_id, 'title', $post->post_title);
+    $description = seo_os_get_seo_value($post_id, 'description');
 
     $word_count = str_word_count(wp_strip_all_tags($content));
     $keyword_count = $keyword ? substr_count(strtolower(wp_strip_all_tags($content)), strtolower($keyword)) : 0;
     $keyword_density = $word_count > 0 ? round(($keyword_count / $word_count) * 100, 2) : 0;
 
-    $score_data['analysis'] = [
-        'title_length'     => mb_strlen($title),
-        'description_length' => mb_strlen($description),
-        'word_count'       => $word_count,
-        'keyword_count'    => $keyword_count,
-        'keyword_density'  => $keyword_density,
-        'keyword_in_title' => $keyword ? (stripos($title, $keyword) !== false) : false,
-        'keyword_in_description' => $keyword ? (stripos($description, $keyword) !== false) : false,
+    $score_data = [
+        'post_id'           => $post_id,
+        'seo_score'         => (int) seo_os_get_seo_value($post_id, 'seo_score') ?: null,
+        'readability_score' => (int) seo_os_get_seo_value($post_id, 'readability_score') ?: null,
+        'focus_keyword'     => $keyword ?: null,
+        'source'            => seo_os_is_renderer() ? 'seo-os' : 'rankmath',
+        'analysis'          => [
+            'title_length'             => mb_strlen($title),
+            'description_length'       => mb_strlen($description),
+            'word_count'               => $word_count,
+            'keyword_count'            => $keyword_count,
+            'keyword_density'          => $keyword_density,
+            'keyword_in_title'         => $keyword ? (stripos($title, $keyword) !== false) : false,
+            'keyword_in_description'   => $keyword ? (stripos($description, $keyword) !== false) : false,
+        ],
     ];
 
-    return new WP_REST_Response([
-        'success' => true,
-        'score'   => $score_data,
-    ], 200);
+    return new WP_REST_Response(['success' => true, 'score' => $score_data], 200);
 }
 
-/**
- * GET /posts/{id}/head - Get rendered SEO <head> tags
- */
+/** GET /posts/{id}/head — returns structured head data */
 function seo_os_get_post_head(WP_REST_Request $request): WP_REST_Response {
     $post_id = (int) $request->get_param('id');
     $post = get_post($post_id);
+    if (!$post) return new WP_REST_Response(['error' => 'Post not found'], 404);
 
-    if (!$post) {
-        return new WP_REST_Response(['error' => 'Post not found'], 404);
-    }
+    $settings = seo_os_get_settings();
+    $permalink = get_permalink($post_id);
+
+    $title = seo_os_get_seo_value($post_id, 'title', $post->post_title);
+    $description = seo_os_get_seo_value($post_id, 'description');
+    $canonical = seo_os_get_seo_value($post_id, 'canonical_url');
+    $robots = seo_os_get_seo_value($post_id, 'robots', 'index, follow');
+
+    $og_title = seo_os_get_seo_value($post_id, 'og_title');
+    $og_desc = seo_os_get_seo_value($post_id, 'og_description');
+    $og_image = seo_os_get_seo_value($post_id, 'og_image');
+
+    $tw_title = seo_os_get_seo_value($post_id, 'twitter_title');
+    $tw_desc = seo_os_get_seo_value($post_id, 'twitter_description');
+    $tw_image = seo_os_get_seo_value($post_id, 'twitter_image');
+    $tw_card = seo_os_get_seo_value($post_id, 'twitter_card_type', 'summary_large_image');
+
+    $featured_img = get_the_post_thumbnail_url($post_id, 'full');
 
     $head_data = [
-        'post_id' => $post_id,
-        'title'   => '',
-        'meta'    => [],
-        'og'      => [],
-        'twitter'  => [],
-        'schema'  => null,
+        'post_id'   => $post_id,
+        'renderer'  => $settings['seo_renderer'],
+        'title'     => $title,
+        'meta'      => [
+            'description' => $description ?: null,
+            'robots'      => $robots,
+            'canonical'   => !empty($canonical) ? $canonical : $permalink,
+        ],
+        'og' => [
+            'title'       => $og_title ?: $title,
+            'description' => $og_desc ?: ($description ?: ''),
+            'image'       => $og_image ?: $featured_img,
+            'url'         => $permalink,
+            'type'        => 'article',
+            'site_name'   => get_bloginfo('name'),
+        ],
+        'twitter' => [
+            'card'        => $tw_card,
+            'title'       => $tw_title ?: ($og_title ?: $title),
+            'description' => $tw_desc ?: ($og_desc ?: ($description ?: '')),
+            'image'       => $tw_image ?: ($og_image ?: $featured_img),
+        ],
+        'schema' => seo_os_get_seo_value($post_id, 'schema_json') ?: null,
     ];
 
-    // Build title
-    $seo_title = get_post_meta($post_id, 'rank_math_title', true);
-    $head_data['title'] = $seo_title ?: $post->post_title;
-
-    // Meta description
-    $description = get_post_meta($post_id, 'rank_math_description', true);
-    if ($description) {
-        $head_data['meta']['description'] = $description;
-    }
-
-    // Robots
-    $robots = get_post_meta($post_id, 'rank_math_robots', true);
-    if ($robots) {
-        $head_data['meta']['robots'] = is_array($robots) ? implode(', ', $robots) : $robots;
-    }
-
-    // Canonical
-    $canonical = get_post_meta($post_id, 'rank_math_canonical_url', true);
-    $head_data['meta']['canonical'] = $canonical ?: get_permalink($post_id);
-
-    // Open Graph
-    $og_title = get_post_meta($post_id, 'rank_math_facebook_title', true);
-    $og_desc = get_post_meta($post_id, 'rank_math_facebook_description', true);
-    $og_image = get_post_meta($post_id, 'rank_math_facebook_image', true);
-    $head_data['og'] = [
-        'title'       => $og_title ?: $head_data['title'],
-        'description' => $og_desc ?: ($description ?: ''),
-        'image'       => $og_image ?: get_the_post_thumbnail_url($post_id, 'full'),
-        'url'         => get_permalink($post_id),
-        'type'        => 'article',
-        'site_name'   => get_bloginfo('name'),
-    ];
-
-    // Twitter Card
-    $tw_title = get_post_meta($post_id, 'rank_math_twitter_title', true);
-    $tw_desc = get_post_meta($post_id, 'rank_math_twitter_description', true);
-    $tw_image = get_post_meta($post_id, 'rank_math_twitter_image', true);
-    $tw_card = get_post_meta($post_id, 'rank_math_twitter_card_type', true);
-    $head_data['twitter'] = [
-        'card'        => $tw_card ?: 'summary_large_image',
-        'title'       => $tw_title ?: $head_data['og']['title'],
-        'description' => $tw_desc ?: $head_data['og']['description'],
-        'image'       => $tw_image ?: $head_data['og']['image'],
-    ];
-
-    // Schema
-    $schemas = get_post_meta($post_id, 'rank_math_schemas', true);
-    if ($schemas) {
-        $head_data['schema'] = is_string($schemas) ? json_decode($schemas, true) : $schemas;
-    }
-
-    return new WP_REST_Response([
-        'success' => true,
-        'head'    => $head_data,
-    ], 200);
+    return new WP_REST_Response(['success' => true, 'head' => $head_data], 200);
 }
 
+// ═══════════════════════════════════════════════════════════
+// 7. Helpers
+// ═══════════════════════════════════════════════════════════
+
 /**
- * Extract all Rank Math data from post meta
+ * Extract all SEO data for a post (merged SEO OS + Rank Math).
  */
-function seo_os_extract_rank_math_data(int $post_id): array {
-    $fields = seo_os_get_rank_math_fields();
+function seo_os_extract_all_seo_data(int $post_id): array {
     $data = [];
 
-    foreach ($fields as $meta_key => $config) {
+    // Read SEO OS own fields first
+    $seo_os_fields = seo_os_get_fields();
+    foreach ($seo_os_fields as $meta_key => $config) {
         $value = get_post_meta($post_id, $meta_key, true);
+        $clean_key = str_replace('_seo_os_', '', $meta_key);
+        $data[$clean_key] = ($config['type'] === 'integer' && $value) ? intval($value) : ($value ?: null);
+    }
 
-        // Clean key: remove 'rank_math_' prefix for cleaner API
-        $clean_key = str_replace('rank_math_', '', $meta_key);
+    // Read Rank Math fields (prefix with rm_ to distinguish)
+    if (seo_os_is_rank_math_active()) {
+        $rm_fields = seo_os_get_rank_math_fields();
+        foreach ($rm_fields as $meta_key => $config) {
+            $value = get_post_meta($post_id, $meta_key, true);
+            $clean_key = str_replace('rank_math_', '', $meta_key);
 
-        if ($config['type'] === 'integer') {
-            $data[$clean_key] = $value ? intval($value) : null;
-        } else {
-            $data[$clean_key] = $value ?: null;
+            // Only fill in if SEO OS field is empty (RM as fallback)
+            if (empty($data[$clean_key]) || $data[$clean_key] === null) {
+                if ($config['type'] === 'integer' && $value) {
+                    $data[$clean_key] = intval($value);
+                } else {
+                    $data[$clean_key] = $value ?: null;
+                }
+            }
+
+            // Also expose raw RM value under rm_ prefix
+            $rm_clean = 'rm_' . $clean_key;
+            $data[$rm_clean] = ($config['type'] === 'integer' && $value) ? intval($value) : ($value ?: null);
         }
     }
 
-    // Special handling: robots may be stored as array
+    // Parse robots array
     if (isset($data['robots']) && is_array($data['robots'])) {
         $data['robots'] = implode(',', $data['robots']);
     }
 
-    // Parse additional keywords into array
-    if (!empty($data['focus_keywords'])) {
-        $data['additional_keywords'] = array_map('trim', explode(',', $data['focus_keywords']));
+    // Parse additional keywords
+    if (!empty($data['additional_keywords'])) {
+        $data['additional_keywords_list'] = array_map('trim', explode(',', $data['additional_keywords']));
+    } else if (!empty($data['focus_keywords'])) {
+        $data['additional_keywords_list'] = array_map('trim', explode(',', $data['focus_keywords']));
     } else {
-        $data['additional_keywords'] = [];
+        $data['additional_keywords_list'] = [];
     }
+
+    // Source indicator
+    $data['_renderer'] = seo_os_get_settings()['seo_renderer'];
 
     return $data;
 }
 
 /**
- * Check if Rank Math is active
+ * Analyze content: count links, images, etc.
  */
-function seo_os_is_rank_math_active(): bool {
-    return defined('RANK_MATH_VERSION') || class_exists('\\RankMath\\RankMath');
+function seo_os_analyze_content(string $content, int $post_id): array {
+    $site_url = get_site_url();
+
+    preg_match_all('/<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>/i', $content, $link_matches);
+    $all_links = $link_matches[1] ?? [];
+    $internal = 0;
+    $external = 0;
+    foreach ($all_links as $link) {
+        if (strpos($link, $site_url) === 0 || strpos($link, '/') === 0) {
+            $internal++;
+        } else {
+            $external++;
+        }
+    }
+
+    preg_match_all('/<img\s[^>]*>/i', $content, $img_matches);
+    $images_total = count($img_matches[0] ?? []);
+    $images_with_alt = 0;
+    foreach (($img_matches[0] ?? []) as $img_tag) {
+        if (preg_match('/alt=["\'][^"\']+["\']/', $img_tag)) {
+            $images_with_alt++;
+        }
+    }
+
+    return [
+        'internal_links_count' => $internal,
+        'external_links_count' => $external,
+        'images_count'         => $images_total,
+        'images_alt_count'     => $images_with_alt,
+    ];
 }
 
-/**
- * Also register all Rank Math fields in standard WP REST API
- * This makes them available via /wp-json/wp/v2/posts too
- */
-add_action('init', function () {
-    $fields = seo_os_get_rank_math_fields();
+// ═══════════════════════════════════════════════════════════
+// 8. Register Meta Fields in WP REST API
+// ═══════════════════════════════════════════════════════════
 
-    foreach ($fields as $meta_key => $config) {
+add_action('init', function () {
+    // Register SEO OS own fields
+    foreach (seo_os_get_fields() as $meta_key => $config) {
         register_post_meta('post', $meta_key, [
             'type'          => $config['type'],
             'single'        => true,
             'show_in_rest'  => true,
-            'auth_callback' => function () {
-                return current_user_can('edit_posts');
-            },
+            'auth_callback' => function () { return current_user_can('edit_posts'); },
+        ]);
+    }
+
+    // Register Rank Math fields too (for standard WP REST API access)
+    foreach (seo_os_get_rank_math_fields() as $meta_key => $config) {
+        register_post_meta('post', $meta_key, [
+            'type'          => $config['type'],
+            'single'        => true,
+            'show_in_rest'  => true,
+            'auth_callback' => function () { return current_user_can('edit_posts'); },
         ]);
     }
 });
 
-/**
- * Add settings page under Tools menu
- */
+// ═══════════════════════════════════════════════════════════
+// 9. Admin Settings Page
+// ═══════════════════════════════════════════════════════════
+
 add_action('admin_menu', function () {
     add_management_page(
         'SEO OS Connector',
@@ -612,134 +890,198 @@ add_action('admin_menu', function () {
     );
 });
 
-/**
- * Settings page
- */
+/** Handle settings form submission */
+add_action('admin_init', function () {
+    if (!isset($_POST['seo_os_save_settings']) || !check_admin_referer('seo_os_settings_nonce')) {
+        return;
+    }
+
+    $settings = seo_os_get_settings();
+    $settings['seo_renderer'] = sanitize_text_field($_POST['seo_renderer'] ?? 'seo-os');
+    $settings['render_og'] = !empty($_POST['render_og']);
+    $settings['render_twitter'] = !empty($_POST['render_twitter']);
+    $settings['render_schema'] = !empty($_POST['render_schema']);
+    $settings['schema_default_type'] = sanitize_text_field($_POST['schema_default_type'] ?? 'Article');
+    $settings['separator'] = sanitize_text_field($_POST['separator'] ?? '—');
+
+    update_option('seo_os_settings', $settings);
+    add_settings_error('seo_os', 'settings_updated', 'Settings saved.', 'updated');
+});
+
+/** Render settings page */
 function seo_os_settings_page(): void {
-    $site_url = get_site_url();
+    $settings = seo_os_get_settings();
     $api_base = rest_url(SEO_OS_CONNECTOR_NAMESPACE);
-    $rank_math_active = seo_os_is_rank_math_active();
-    $rm_version = $rank_math_active && defined('RANK_MATH_VERSION') ? RANK_MATH_VERSION : 'N/A';
-    $fields = seo_os_get_rank_math_fields();
+    $rm_active = seo_os_is_rank_math_active();
+    $rm_version = $rm_active && defined('RANK_MATH_VERSION') ? RANK_MATH_VERSION : 'N/A';
+    settings_errors('seo_os');
     ?>
     <div class="wrap">
-        <h1>SEO OS Connector</h1>
+        <h1 style="display:flex;align-items:center;gap:8px;">
+            <span style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;font-weight:bold;font-size:16px;">R</span>
+            SEO OS Connector
+            <span style="background:#e0e7ff;color:#4f46e5;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;">v<?php echo SEO_OS_CONNECTOR_VERSION; ?></span>
+        </h1>
 
-        <div class="card" style="max-width: 800px; padding: 20px;">
-            <h2>Connection Status</h2>
-            <table class="form-table">
+        <!-- Status Card -->
+        <div class="card" style="max-width:860px;padding:24px;margin-top:16px;">
+            <h2 style="margin-top:0;">Status</h2>
+            <table class="form-table" style="margin:0;">
                 <tr>
-                    <th>Plugin Version</th>
-                    <td><code><?php echo SEO_OS_CONNECTOR_VERSION; ?></code></td>
-                </tr>
-                <tr>
-                    <th>API Base URL</th>
-                    <td><code><?php echo esc_html($api_base); ?></code></td>
-                </tr>
-                <tr>
-                    <th>Rank Math</th>
+                    <th style="width:180px;">SEO Renderer</th>
                     <td>
-                        <?php if ($rank_math_active): ?>
-                            <span style="color: green; font-weight: bold;">Active</span>
-                            (v<?php echo esc_html($rm_version); ?>)
+                        <?php if ($settings['seo_renderer'] === 'seo-os'): ?>
+                            <span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:4px;font-weight:600;font-size:12px;">SEO OS</span>
+                            <span style="color:#6b7280;font-size:12px;margin-left:8px;">Plugin renders &lt;head&gt; tags</span>
                         <?php else: ?>
-                            <span style="color: red; font-weight: bold;">Not Active</span>
-                            <p class="description">Install and activate Rank Math SEO for full functionality.</p>
+                            <span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:4px;font-weight:600;font-size:12px;">Rank Math</span>
+                            <span style="color:#6b7280;font-size:12px;margin-left:8px;">Rank Math renders &lt;head&gt; tags</span>
                         <?php endif; ?>
                     </td>
                 </tr>
                 <tr>
-                    <th>Registered Fields</th>
-                    <td><?php echo count($fields); ?> Rank Math meta fields</td>
+                    <th>Rank Math</th>
+                    <td>
+                        <?php if ($rm_active): ?>
+                            <span style="color:#166534;font-weight:600;">Active</span> (v<?php echo esc_html($rm_version); ?>)
+                        <?php else: ?>
+                            <span style="color:#6b7280;">Not installed</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <tr>
+                    <th>API Base</th>
+                    <td><code style="font-size:12px;"><?php echo esc_html($api_base); ?></code></td>
                 </tr>
             </table>
         </div>
 
-        <div class="card" style="max-width: 800px; padding: 20px; margin-top: 20px;">
-            <h2>API Endpoints</h2>
-            <table class="widefat striped">
-                <thead>
+        <!-- Settings Card -->
+        <form method="post">
+            <?php wp_nonce_field('seo_os_settings_nonce'); ?>
+            <div class="card" style="max-width:860px;padding:24px;margin-top:16px;">
+                <h2 style="margin-top:0;">SEO Rendering Mode</h2>
+                <p style="color:#6b7280;margin-top:0;">Choose who renders SEO meta tags in the &lt;head&gt; of your pages.</p>
+
+                <table class="form-table" style="margin:0;">
                     <tr>
-                        <th>Method</th>
-                        <th>Endpoint</th>
-                        <th>Description</th>
+                        <th style="width:180px;">Renderer</th>
+                        <td>
+                            <fieldset>
+                                <label style="display:block;padding:12px 16px;border:2px solid <?php echo $settings['seo_renderer'] === 'seo-os' ? '#6366f1' : '#e5e7eb'; ?>;border-radius:8px;margin-bottom:8px;cursor:pointer;background:<?php echo $settings['seo_renderer'] === 'seo-os' ? '#eef2ff' : '#fff'; ?>;">
+                                    <input type="radio" name="seo_renderer" value="seo-os" <?php checked($settings['seo_renderer'], 'seo-os'); ?> style="margin-right:8px;" />
+                                    <strong>SEO OS</strong> — Simple, lightweight. Plugin renders title, meta, OG, Twitter, Schema.
+                                    <?php if (!$rm_active): ?>
+                                        <span style="background:#dcfce7;color:#166534;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:4px;">Recommended</span>
+                                    <?php endif; ?>
+                                </label>
+                                <label style="display:block;padding:12px 16px;border:2px solid <?php echo $settings['seo_renderer'] === 'rankmath' ? '#6366f1' : '#e5e7eb'; ?>;border-radius:8px;cursor:pointer;background:<?php echo $settings['seo_renderer'] === 'rankmath' ? '#eef2ff' : '#fff'; ?>;<?php if (!$rm_active) echo 'opacity:0.5;'; ?>">
+                                    <input type="radio" name="seo_renderer" value="rankmath" <?php checked($settings['seo_renderer'], 'rankmath'); ?> <?php if (!$rm_active) echo 'disabled'; ?> style="margin-right:8px;" />
+                                    <strong>Rank Math</strong> — Full-featured SEO plugin. Connector acts as API bridge only.
+                                    <?php if (!$rm_active): ?>
+                                        <span style="color:#ef4444;font-size:11px;margin-left:4px;">Requires Rank Math plugin</span>
+                                    <?php endif; ?>
+                                </label>
+                            </fieldset>
+                        </td>
                     </tr>
+                </table>
+
+                <h3 style="margin-top:24px;">SEO OS Renderer Options</h3>
+                <p style="color:#6b7280;margin-top:0;font-size:13px;">These options only apply when "SEO OS" is the active renderer.</p>
+                <table class="form-table" style="margin:0;">
+                    <tr>
+                        <th style="width:180px;">Open Graph</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="render_og" value="1" <?php checked($settings['render_og']); ?> />
+                                Render OG tags (og:title, og:description, og:image, etc.)
+                            </label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Twitter Cards</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="render_twitter" value="1" <?php checked($settings['render_twitter']); ?> />
+                                Render Twitter Card tags (twitter:card, twitter:title, etc.)
+                            </label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Schema Markup</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="render_schema" value="1" <?php checked($settings['render_schema']); ?> />
+                                Render JSON-LD Schema markup (Article, etc.)
+                            </label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Default Schema Type</th>
+                        <td>
+                            <select name="schema_default_type">
+                                <?php foreach (['Article', 'NewsArticle', 'BlogPosting', 'TechArticle', 'HowTo'] as $type): ?>
+                                    <option value="<?php echo $type; ?>" <?php selected($settings['schema_default_type'], $type); ?>><?php echo $type; ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Title Separator</th>
+                        <td>
+                            <select name="separator">
+                                <?php foreach (['—', '-', '|', '·', '»', '•'] as $sep): ?>
+                                    <option value="<?php echo esc_attr($sep); ?>" <?php selected($settings['separator'], $sep); ?>><?php echo esc_html($sep); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <span style="color:#9ca3af;font-size:12px;margin-left:8px;">Used in: "Post Title <?php echo esc_html($settings['separator']); ?> Site Name"</span>
+                        </td>
+                    </tr>
+                </table>
+
+                <p style="margin-top:20px;">
+                    <input type="submit" name="seo_os_save_settings" class="button-primary" value="Save Settings" />
+                </p>
+            </div>
+        </form>
+
+        <!-- API Endpoints Card -->
+        <div class="card" style="max-width:860px;padding:24px;margin-top:16px;">
+            <h2 style="margin-top:0;">API Endpoints</h2>
+            <table class="widefat striped" style="margin-top:8px;">
+                <thead>
+                    <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td><code>GET</code></td>
-                        <td><code>/seo-os/v1/ping</code></td>
-                        <td>Health check</td>
-                    </tr>
-                    <tr>
-                        <td><code>GET</code></td>
-                        <td><code>/seo-os/v1/info</code></td>
-                        <td>Plugin & site info</td>
-                    </tr>
-                    <tr>
-                        <td><code>GET</code></td>
-                        <td><code>/seo-os/v1/posts</code></td>
-                        <td>List posts with SEO data</td>
-                    </tr>
-                    <tr>
-                        <td><code>GET</code></td>
-                        <td><code>/seo-os/v1/posts/{id}/meta</code></td>
-                        <td>Get all Rank Math fields</td>
-                    </tr>
-                    <tr>
-                        <td><code>POST</code></td>
-                        <td><code>/seo-os/v1/posts/{id}/meta</code></td>
-                        <td>Update Rank Math fields</td>
-                    </tr>
-                    <tr>
-                        <td><code>GET</code></td>
-                        <td><code>/seo-os/v1/posts/{id}/score</code></td>
-                        <td>Get SEO score + analysis</td>
-                    </tr>
-                    <tr>
-                        <td><code>GET</code></td>
-                        <td><code>/seo-os/v1/posts/{id}/head</code></td>
-                        <td>Get rendered SEO head tags</td>
-                    </tr>
+                    <tr><td><code>GET</code></td><td><code>/seo-os/v1/ping</code></td><td>Health check</td></tr>
+                    <tr><td><code>GET</code></td><td><code>/seo-os/v1/info</code></td><td>Plugin & site info</td></tr>
+                    <tr><td><code>GET/POST</code></td><td><code>/seo-os/v1/settings</code></td><td>Read/update renderer settings</td></tr>
+                    <tr><td><code>GET</code></td><td><code>/seo-os/v1/posts</code></td><td>List posts with SEO data</td></tr>
+                    <tr><td><code>GET</code></td><td><code>/seo-os/v1/posts/{id}/meta</code></td><td>Get all SEO fields</td></tr>
+                    <tr><td><code>POST</code></td><td><code>/seo-os/v1/posts/{id}/meta</code></td><td>Update SEO fields</td></tr>
+                    <tr><td><code>GET</code></td><td><code>/seo-os/v1/posts/{id}/score</code></td><td>Get SEO score + analysis</td></tr>
+                    <tr><td><code>GET</code></td><td><code>/seo-os/v1/posts/{id}/head</code></td><td>Get rendered SEO head tags</td></tr>
                 </tbody>
             </table>
-            <p class="description" style="margin-top: 10px;">
-                Authentication: Use WordPress Application Passwords.
-                All endpoints require <code>edit_posts</code> capability.
+            <p style="margin-top:12px;">
+                <a href="<?php echo esc_url($api_base . '/ping'); ?>" target="_blank" class="button">Test Ping</a>
+                <a href="<?php echo esc_url($api_base . '/info'); ?>" target="_blank" class="button">View Info</a>
+                <a href="<?php echo esc_url($api_base . '/settings'); ?>" target="_blank" class="button">View Settings</a>
             </p>
         </div>
 
-        <div class="card" style="max-width: 800px; padding: 20px; margin-top: 20px;">
-            <h2>Quick Test</h2>
-            <p>Test the connection from your browser (you must be logged in):</p>
-            <p>
-                <a href="<?php echo esc_url($api_base . '/ping'); ?>" target="_blank" class="button">
-                    Test Ping
-                </a>
-                <a href="<?php echo esc_url($api_base . '/info'); ?>" target="_blank" class="button">
-                    View Info
-                </a>
-                <a href="<?php echo esc_url($api_base . '/posts?per_page=5'); ?>" target="_blank" class="button">
-                    List Posts (5)
-                </a>
-            </p>
-        </div>
-
-        <div class="card" style="max-width: 800px; padding: 20px; margin-top: 20px;">
-            <h2>SEO OS Configuration</h2>
-            <p>Add this site to SEO OS with the following settings:</p>
-            <table class="form-table">
+        <!-- Setup Card -->
+        <div class="card" style="max-width:860px;padding:24px;margin-top:16px;">
+            <h2 style="margin-top:0;">Connect to SEO OS</h2>
+            <table class="form-table" style="margin:0;">
                 <tr>
-                    <th>Site URL</th>
-                    <td><code><?php echo esc_html(str_replace(['https://', 'http://'], '', $site_url)); ?></code></td>
+                    <th style="width:180px;">Site URL</th>
+                    <td><code><?php echo esc_html(str_replace(['https://', 'http://'], '', get_site_url())); ?></code></td>
                 </tr>
                 <tr>
-                    <th>API URL</th>
-                    <td><code><?php echo esc_html($api_base); ?></code></td>
-                </tr>
-                <tr>
-                    <th>Auth</th>
-                    <td>WordPress Application Password (Users &rarr; Profile &rarr; Application Passwords)</td>
+                    <th>Authentication</th>
+                    <td>WordPress Application Passwords (Users &rarr; Profile &rarr; Application Passwords)</td>
                 </tr>
             </table>
         </div>
@@ -747,17 +1089,16 @@ function seo_os_settings_page(): void {
     <?php
 }
 
-/**
- * Show notice if Rank Math is not active
- */
+/** Show admin notice if using SEO OS mode without Rank Math (informational) */
 add_action('admin_notices', function () {
-    if (!seo_os_is_rank_math_active()) {
-        $screen = get_current_screen();
-        if ($screen && $screen->id === 'tools_page_seo-os-connector') {
-            echo '<div class="notice notice-warning"><p>';
-            echo '<strong>SEO OS Connector:</strong> Rank Math SEO is not active. ';
-            echo 'The connector will still work with basic post meta, but SEO scores and analysis features require Rank Math.';
-            echo '</p></div>';
-        }
+    $screen = get_current_screen();
+    if (!$screen || $screen->id !== 'tools_page_seo-os-connector') return;
+
+    $settings = seo_os_get_settings();
+    if ($settings['seo_renderer'] === 'seo-os' && seo_os_is_rank_math_active()) {
+        echo '<div class="notice notice-info"><p>';
+        echo '<strong>SEO OS Connector:</strong> SEO OS mode is active. Rank Math\'s &lt;head&gt; output is disabled. ';
+        echo 'SEO data from Rank Math is still used as fallback when SEO OS fields are empty.';
+        echo '</p></div>';
     }
 });

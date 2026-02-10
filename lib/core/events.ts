@@ -15,10 +15,19 @@ export type ModuleId =
   | 'rankmath-bridge'
   | 'gsc-insights'
   | 'nana-banana'
+  // Marketplace modules
+  | 'recipes'
+  | 'personas'
+  | 'llm-tracker'
+  | 'keyword-research'
+  | 'keyword-magic'
+  | 'docs'
+  | 'ai-writer'
+  | 'cron'
 
 // ====== API Key Types ======
 
-export type ApiKeyType = 'gemini' | 'dataforseo' | 'gsc' | 'ga4'
+export type ApiKeyType = 'gemini' | 'dataforseo' | 'gsc' | 'ga4' | 'openai'
 
 // ====== Event Types ======
 
@@ -41,6 +50,8 @@ export type EventType =
   | 'content.faq_generated'
   | 'content.rewrite_ready'
   | 'content.title_suggestions_ready'
+  | 'content.title_generated'
+  | 'content.description_generated'
   // RankMath Bridge events (WordPress sync)
   | 'bridge.sync_completed'
   | 'bridge.metadata_pushed'
@@ -58,6 +69,24 @@ export type EventType =
   | 'banana.image_pushed_to_wp'
   | 'banana.pipeline_completed'
   | 'banana.pipeline_failed'
+  // LLM Tracker events
+  | 'llm.query_tracked'
+  | 'llm.visibility_changed'
+  // Keyword events
+  | 'keyword.research_completed'
+  | 'keyword.cluster_created'
+  // Persona events
+  | 'persona.created'
+  | 'persona.updated'
+  | 'persona.document_uploaded'
+  | 'persona.document_processed'
+  // AI Writer events
+  | 'writer.title_generated'
+  | 'writer.description_generated'
+  | 'writer.content_generated'
+  // Cron Scheduler events
+  | 'cron.job_executed'
+  | 'cron.job_failed'
 
 // ====== Event Severity ======
 
@@ -140,6 +169,7 @@ export interface Recipe {
   trigger_conditions: Record<string, any>
   actions: RecipeAction[]
   site_ids: string[] | null
+  graph_layout: Record<string, any> | null
   times_triggered: number
   last_triggered_at: string | null
   created_at: string

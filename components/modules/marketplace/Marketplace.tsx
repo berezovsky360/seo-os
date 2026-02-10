@@ -3,7 +3,8 @@
 import React, { useState, useMemo } from 'react';
 import {
   Globe, Sparkles, Search, BarChart3, Image as ImageIcon,
-  Loader2, AlertCircle, ChevronLeft, Store, Settings, X, ShieldAlert
+  Loader2, AlertCircle, ChevronLeft, Store, Settings, X, ShieldAlert,
+  BookOpen, Users, Bot, Database, Wand2, FileText
 } from 'lucide-react';
 import { useCore } from '@/lib/contexts/CoreContext';
 import { useToggleModule } from '@/hooks/useModules';
@@ -77,6 +78,83 @@ const MODULE_CARDS: {
     requiredKeys: ['gemini'],
     status: 'ready',
     viewState: 'nana-banana',
+  },
+  // Marketplace modules
+  {
+    id: 'recipes',
+    name: 'Recipes',
+    description: 'Automation chains triggered by events with conditional execution and result chaining.',
+    icon: <BookOpen size={24} />,
+    iconBg: 'bg-violet-50 text-violet-600',
+    gradient: 'from-violet-500 to-purple-600',
+    requiredKeys: [],
+    status: 'ready',
+    viewState: 'recipes',
+  },
+  {
+    id: 'personas',
+    name: 'Personas',
+    description: 'Author personas and brand voice management for consistent AI-generated content.',
+    icon: <Users size={24} />,
+    iconBg: 'bg-gray-50 text-gray-600',
+    gradient: 'from-gray-500 to-gray-700',
+    requiredKeys: [],
+    status: 'ready',
+    viewState: 'authors',
+  },
+  {
+    id: 'llm-tracker',
+    name: 'LLM Tracker',
+    description: 'Track AI search visibility across ChatGPT, Claude, Gemini, and Perplexity.',
+    icon: <Bot size={24} />,
+    iconBg: 'bg-cyan-50 text-cyan-600',
+    gradient: 'from-cyan-500 to-blue-500',
+    requiredKeys: [],
+    status: 'ready',
+    viewState: 'llm-tracker',
+  },
+  {
+    id: 'keyword-research',
+    name: 'Keyword Research',
+    description: 'Research, collect, and organize keywords with intent, volume, and difficulty data.',
+    icon: <Database size={24} />,
+    iconBg: 'bg-emerald-50 text-emerald-600',
+    gradient: 'from-emerald-500 to-green-600',
+    requiredKeys: [],
+    status: 'ready',
+    viewState: 'keywords-db',
+  },
+  {
+    id: 'keyword-magic',
+    name: 'Keyword Magic Tool',
+    description: 'Generate keyword ideas, cluster by topic, and create actionable content plans.',
+    icon: <Wand2 size={24} />,
+    iconBg: 'bg-pink-50 text-pink-600',
+    gradient: 'from-pink-500 to-rose-500',
+    requiredKeys: [],
+    status: 'ready',
+    viewState: 'keywords-main',
+  },
+  {
+    id: 'docs',
+    name: 'Documentation',
+    description: 'In-app reference: architecture, API routes, modules, events, and database schema.',
+    icon: <FileText size={24} />,
+    iconBg: 'bg-slate-50 text-slate-600',
+    gradient: 'from-slate-500 to-slate-700',
+    requiredKeys: [],
+    status: 'ready',
+    viewState: 'docs',
+  },
+  {
+    id: 'ai-writer',
+    name: 'AI Writer',
+    description: 'AI-powered SEO content generation for titles, meta descriptions, and article content.',
+    icon: <Sparkles size={24} />,
+    iconBg: 'bg-indigo-50 text-indigo-600',
+    gradient: 'from-indigo-500 to-violet-600',
+    requiredKeys: ['gemini'],
+    status: 'ready',
   },
 ];
 

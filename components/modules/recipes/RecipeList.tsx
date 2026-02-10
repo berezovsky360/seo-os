@@ -8,6 +8,7 @@ import {
 import { useRecipes, useCreateRecipe, useUpdateRecipe, useDeleteRecipe } from '@/hooks/useRecipes';
 import { useToast } from '@/lib/contexts/ToastContext';
 import RecipeEditor from './RecipeEditor';
+import RecipeFlowEditor from './RecipeFlowEditor';
 import type { Recipe } from '@/lib/core/events';
 
 // Pre-built recipe templates
@@ -57,6 +58,7 @@ export default function RecipeList({ onBack }: RecipeListProps) {
   const toast = useToast();
 
   const [showEditor, setShowEditor] = useState(false);
+  const [showFlowEditor, setShowFlowEditor] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -123,6 +125,7 @@ export default function RecipeList({ onBack }: RecipeListProps) {
       trigger_conditions: template.trigger_conditions,
       actions: template.actions as Recipe['actions'],
       site_ids: null,
+      graph_layout: null,
       times_triggered: 0,
       last_triggered_at: null,
       created_at: '',
@@ -135,6 +138,21 @@ export default function RecipeList({ onBack }: RecipeListProps) {
     setShowEditor(true);
   };
 
+  const startFlowEdit = (recipe: Recipe | null) => {
+    setEditingRecipe(recipe);
+    setShowFlowEditor(true);
+  };
+
+  const handleFlowSave = async (data: any) => {
+    if (editingRecipe?.id) {
+      await handleUpdate(data);
+    } else {
+      await handleCreate(data);
+    }
+    setShowFlowEditor(false);
+    setEditingRecipe(null);
+  };
+
   const formatEventType = (type: string) => {
     const action = type.split('.').slice(1).join('.');
     return action.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -144,7 +162,19 @@ export default function RecipeList({ onBack }: RecipeListProps) {
     return `${module.replace(/-/g, ' ')} → ${action.replace(/_/g, ' ')}`;
   };
 
-  // Editor overlay
+  // Visual Flow Editor overlay
+  if (showFlowEditor) {
+    return (
+      <RecipeFlowEditor
+        recipe={editingRecipe}
+        onSave={handleFlowSave}
+        onClose={() => { setShowFlowEditor(false); setEditingRecipe(null); }}
+        isSaving={createRecipe.isPending || updateRecipe.isPending}
+      />
+    );
+  }
+
+  // Form Editor overlay
   if (showEditor) {
     const isEditing = editingRecipe?.id;
     return (
@@ -230,7 +260,7 @@ export default function RecipeList({ onBack }: RecipeListProps) {
           </div>
 
           <button
-            onClick={() => { setEditingRecipe(null); setShowEditor(true); }}
+            onClick={() => startFlowEdit(null)}
             className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200"
           >
             <Plus size={14} />
@@ -275,7 +305,7 @@ export default function RecipeList({ onBack }: RecipeListProps) {
                       <div className="flex items-center gap-3 mb-1">
                         <h3
                           className="font-semibold text-gray-900 cursor-pointer hover:text-indigo-600 transition-colors"
-                          onClick={() => startEdit(recipe)}
+                          onClick={() => startFlowEdit(recipe)}
                         >
                           {recipe.name}
                         </h3>

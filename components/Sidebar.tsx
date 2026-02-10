@@ -6,7 +6,8 @@ import {
   LayoutDashboard, Calendar, Database, List, Layers, FileText,
   CheckSquare, BarChart2, Settings, Bell, Search,
   Briefcase, Home, PieChart, MessageSquare, Box,
-  Zap, Key, Activity, BookOpen, Store
+  Zap, Key, Activity, BookOpen, Store,
+  PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import { useCore } from '@/lib/contexts/CoreContext';
 
@@ -17,6 +18,8 @@ interface SidebarProps {
   setUserRole: (role: UserRole) => void;
   isOpen: boolean;
   onClose: () => void;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 // Color mapping for dynamic module sections
@@ -26,9 +29,13 @@ const SECTION_COLOR_MAP: Record<string, { dot: string; text: string }> = {
   'bg-emerald-500': { dot: 'bg-emerald-500', text: 'text-emerald-600' },
   'bg-purple-500': { dot: 'bg-purple-500', text: 'text-purple-600' },
   'bg-yellow-500': { dot: 'bg-yellow-500', text: 'text-yellow-600' },
+  'bg-cyan-500': { dot: 'bg-cyan-500', text: 'text-cyan-600' },
+  'bg-slate-500': { dot: 'bg-slate-500', text: 'text-slate-600' },
+  'bg-violet-500': { dot: 'bg-violet-500', text: 'text-violet-600' },
+  'bg-gray-500': { dot: 'bg-gray-500', text: 'text-gray-600' },
 };
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, setUserRole, isOpen, onClose }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, setUserRole, isOpen, onClose, isCollapsed, onToggleCollapse }) => {
   const { getModuleSidebarSections } = useCore();
   const moduleSections = getModuleSidebarSections();
 
@@ -55,8 +62,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
   );
 
   // Core views for the icon rail "active" check
-  const coreViews = ['marketplace', 'key-management', 'event-log', 'recipes', 'settings'] as const;
-  const moduleViews = ['rank-pulse', 'gemini-architect', 'rankmath-bridge', 'gsc-insights', 'bulk-metadata', 'nana-banana'] as const;
+  const coreViews = ['marketplace', 'key-management', 'event-log', 'recipes', 'settings', 'docs'] as const;
+  const moduleViews = ['rank-pulse', 'gemini-architect', 'rankmath-bridge', 'gsc-insights', 'bulk-metadata', 'nana-banana', 'keywords-db', 'keywords-main', 'llm-tracker', 'authors'] as const;
 
   return (
     <>
@@ -93,6 +100,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
             </div>
 
             <div className="mt-auto flex flex-col items-center pb-4">
+                {isCollapsed && (
+                    <RailItem icon={PanelLeftOpen} onClick={onToggleCollapse} />
+                )}
                 <RailItem icon={Settings} />
                 <div className="w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 text-xs font-bold mt-2">
                     JD
@@ -101,13 +111,20 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
         </div>
 
         {/* Pane 2: Light Navigation Menu */}
-        <div className="w-64 bg-white border-r border-gray-100 flex flex-col h-full z-10">
+        <div className={`bg-white border-r border-gray-100 flex flex-col h-full z-10 transition-all duration-300 overflow-hidden ${isCollapsed ? 'w-0 md:w-0' : 'w-64'}`}>
              {/* Header */}
-            <div className="h-20 flex items-center px-6 border-b border-gray-50">
+            <div className="h-20 flex items-center px-6 border-b border-gray-50 justify-between min-w-[256px]">
                 <div className="flex items-center gap-2 text-gray-900 font-bold text-lg tracking-tight">
                     <BarChart2 className="text-gray-900" size={20} />
                     <span>RankPilot</span>
                 </div>
+                <button
+                    onClick={onToggleCollapse}
+                    className="hidden md:flex p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+                    title="Collapse sidebar"
+                >
+                    <PanelLeftClose size={18} />
+                </button>
             </div>
 
             {/* Scrollable Content */}
@@ -124,40 +141,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
                      </div>
                      <div onClick={() => handleNavClick('calendar')} className={navItemClass('calendar')}>
                         <span>Calendar</span>
-                     </div>
-                </div>
-
-                {/* Keyword Research Section */}
-                <div className="mb-8">
-                    <div className="px-4 mb-2 flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                        <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Keyword Research</span>
-                    </div>
-                     <div onClick={() => handleNavClick('keywords-db')} className={navItemClass('keywords-db')}>
-                        <span>Keyword Research</span>
-                     </div>
-                     <div onClick={() => handleNavClick('keywords-main')} className={navItemClass('keywords-main')}>
-                        <span>Keyword Magic Tool</span>
-                     </div>
-                     <div onClick={() => handleNavClick('serp')} className={navItemClass('serp')}>
-                        <span>SERP Analysis</span>
-                     </div>
-                      <div onClick={() => handleNavClick('llm-tracker')} className={navItemClass('llm-tracker')}>
-                        <span>LLM Tracker</span>
-                     </div>
-                </div>
-
-                {/* Content Section */}
-                <div className="mb-8">
-                    <div className="px-4 mb-2 flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
-                        <span className="text-xs font-bold text-amber-600 uppercase tracking-wider">Content</span>
-                    </div>
-                     <div onClick={() => handleNavClick('production')} className={navItemClass('production')}>
-                        <span>Posts</span>
-                     </div>
-                     <div onClick={() => handleNavClick('clusters')} className={navItemClass('clusters')}>
-                        <span>Topics</span>
                      </div>
                 </div>
 
@@ -192,14 +175,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
                     <div onClick={() => handleNavClick('event-log')} className={navItemClass('event-log')}>
                         <span>Event Log</span>
                     </div>
-                    <div onClick={() => handleNavClick('recipes')} className={navItemClass('recipes')}>
-                        <span>Recipes</span>
-                    </div>
                     <div onClick={() => handleNavClick('marketplace')} className={navItemClass('marketplace')}>
                         <span>Marketplace</span>
                     </div>
                     <div onClick={() => handleNavClick('key-management')} className={navItemClass('key-management')}>
                         <span>API Keys</span>
+                    </div>
+                    <div onClick={() => handleNavClick('docs')} className={navItemClass('docs')}>
+                        <span>Documentation</span>
                     </div>
                 </div>
 
@@ -209,9 +192,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
                         <div className="w-1.5 h-1.5 rounded-full bg-gray-400"></div>
                         <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Admin</span>
                     </div>
-                     <div onClick={() => handleNavClick('authors')} className={navItemClass('authors')}>
-                        <span>Personas</span>
-                     </div>
                      <div onClick={() => handleNavClick('brands')} className={navItemClass('brands')}>
                         <span>Settings</span>
                      </div>

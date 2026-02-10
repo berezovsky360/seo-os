@@ -124,7 +124,9 @@ export const MOCK_AUTHORS: AuthorPersona[] = [
     role: 'Data-Driven Expert',
     avatarUrl: 'https://picsum.photos/100/100?random=101',
     systemPrompt: 'Style: Analytical, precise, chart-focused. Focus: Interpretation of complex metrics.',
-    active: true
+    writingStyle: 'formal',
+    active: true,
+    isDefault: true,
   },
   {
     id: '2',
@@ -132,7 +134,9 @@ export const MOCK_AUTHORS: AuthorPersona[] = [
     role: 'Narrative Lead',
     avatarUrl: 'https://picsum.photos/100/100?random=102',
     systemPrompt: 'Style: Emotional, engaging, narrative-driven. Focus: Case studies and user journeys.',
-    active: false
+    writingStyle: 'creative',
+    active: false,
+    isDefault: false,
   },
   {
     id: '3',
@@ -140,7 +144,9 @@ export const MOCK_AUTHORS: AuthorPersona[] = [
     role: 'Technical SEO',
     avatarUrl: 'https://picsum.photos/100/100?random=103',
     systemPrompt: 'Style: Highly technical, code-heavy, concise. Focus: Schema, rendering, and crawl budget.',
-    active: false
+    writingStyle: 'technical',
+    active: false,
+    isDefault: false,
   },
   {
     id: '4',
@@ -148,15 +154,19 @@ export const MOCK_AUTHORS: AuthorPersona[] = [
     role: 'News Reporter',
     avatarUrl: 'https://picsum.photos/100/100?random=104',
     systemPrompt: 'Style: Urgent, punchy, news-cycle focused. Focus: Algorithm updates and industry shifts.',
-    active: false
+    writingStyle: 'casual',
+    active: false,
+    isDefault: false,
   },
-   {
+  {
     id: '5',
     name: 'Alex, The Minimalist',
     role: 'Product Owner',
     avatarUrl: 'https://picsum.photos/100/100?random=105',
     systemPrompt: 'Style: Direct, bullet-point heavy, actionable. Focus: ROI and bottom-line impact.',
-    active: false
+    writingStyle: 'balanced',
+    active: false,
+    isDefault: false,
   }
 ];
 

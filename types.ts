@@ -65,8 +65,44 @@ export interface AuthorPersona {
   name: string;
   avatarUrl: string;
   role: string;
-  systemPrompt: string; // The "tone" description
+  systemPrompt: string;
+  writingStyle: WritingStyle;
   active: boolean;
+  isDefault: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type WritingStyle = 'formal' | 'casual' | 'technical' | 'creative' | 'balanced';
+
+export interface PersonaDocument {
+  id: string;
+  persona_id: string;
+  user_id: string;
+  file_name: string;
+  file_size: number;
+  mime_type: string;
+  storage_path: string;
+  strategy: 'inline' | 'chunked';
+  content_text: string | null;
+  chunk_count: number;
+  is_processed: boolean;
+  processing_error: string | null;
+  created_at: string;
+}
+
+export interface PersonaDB {
+  id: string;
+  user_id: string;
+  name: string;
+  role: string;
+  avatar_url: string | null;
+  system_prompt: string;
+  writing_style: string;
+  active: boolean;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export type ViewState =
@@ -81,9 +117,7 @@ export type ViewState =
     | 'clusters'
     | 'ideas-cluster'
     | 'ideas-list'
-    | 'production'
     | 'article-overview'
-    | 'finished'
     | 'llm-tracker'
     | 'brands'
     // Core Event Bus views
@@ -98,7 +132,9 @@ export type ViewState =
     | 'rankmath-bridge'
     | 'gsc-insights'
     | 'bulk-metadata'
-    | 'nana-banana';
+    | 'nana-banana'
+    | 'docs'
+    | 'cron-jobs';
 
 export interface Article {
     id: string;

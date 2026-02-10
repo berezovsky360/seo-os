@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, getEncryptionKey, isEncrypted } from '@/lib/utils/encryption'
 import { createWordPressClient } from '@/lib/wordpress/client'
+import { addGutenbergBlockMarkers } from '@/lib/utils/wordpress-blocks'
 
 // Server-side Supabase client with service role
 const supabase = createClient(
@@ -125,6 +126,9 @@ export async function POST(
       schema_config: article.schema_config,
     }
 
+    // Wrap column HTML with Gutenberg block comments for WordPress
+    const wpContent = addGutenbergBlockMarkers(article.content)
+
     let wpPost: { id: number; link: string }
     const isUpdate = !!article.wp_post_id
 
@@ -133,7 +137,7 @@ export async function POST(
       console.log('Updating existing WP post:', article.wp_post_id)
       wpPost = await wpClient.updatePostWithRankMath(article.wp_post_id, {
         title: article.title,
-        content: article.content,
+        content: wpContent,
         status: 'publish',
         categories: categoryIds.length > 0 ? categoryIds : undefined,
         tags: tagIds.length > 0 ? tagIds : undefined,
@@ -144,7 +148,7 @@ export async function POST(
       console.log('Creating new WP post')
       wpPost = await wpClient.createPostWithRankMath({
         title: article.title,
-        content: article.content,
+        content: wpContent,
         status: 'publish',
         categories: categoryIds,
         tags: tagIds,

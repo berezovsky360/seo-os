@@ -15,12 +15,31 @@ import { GeminiArchitectModule } from '@/lib/modules/gemini-architect'
 import { GSCInsightsModule } from '@/lib/modules/gsc-insights'
 import { NanaBananaModule } from '@/lib/modules/nana-banana'
 
+// Marketplace modules
+import { RecipesModule } from '@/lib/modules/recipes'
+import { PersonasModule } from '@/lib/modules/personas'
+import { LLMTrackerModule } from '@/lib/modules/llm-tracker'
+import { KeywordResearchModule } from '@/lib/modules/keyword-research'
+import { KeywordMagicModule } from '@/lib/modules/keyword-magic'
+import { DocsModule } from '@/lib/modules/docs'
+import { AIWriterModule } from '@/lib/modules/ai-writer'
+import { CronModule } from '@/lib/modules/cron'
+
 export const MODULE_REGISTRY: Record<string, SEOModule> = {
   'rankmath-bridge': new RankMathBridgeModule(),
   'rank-pulse': new RankPulseModule(),
   'gemini-architect': new GeminiArchitectModule(),
   'gsc-insights': new GSCInsightsModule(),
   'nana-banana': new NanaBananaModule(),
+  // Marketplace modules
+  'recipes': new RecipesModule(),
+  'personas': new PersonasModule(),
+  'llm-tracker': new LLMTrackerModule(),
+  'keyword-research': new KeywordResearchModule(),
+  'keyword-magic': new KeywordMagicModule(),
+  'docs': new DocsModule(),
+  'ai-writer': new AIWriterModule(),
+  'cron': new CronModule(),
 }
 
 /**

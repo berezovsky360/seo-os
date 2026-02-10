@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   BarChart3,
   Plus,
@@ -26,6 +26,7 @@ import {
 } from '@/hooks/useRankPulse';
 import { useSites } from '@/hooks/useSites';
 import { useToast } from '@/lib/contexts/ToastContext';
+import { DFS_LOCATIONS, DFS_LOCATION_MAP, isoToFlag } from '@/lib/dataforseo/locations';
 import {
   LineChart,
   Line,
@@ -94,6 +95,42 @@ export default function RankPulseDashboard({ onBack }: { onBack?: () => void } =
   const [newLocationCode, setNewLocationCode] = useState(2643);
   const [serpSnapshot, setSerpSnapshot] = useState<any | null>(null);
   const [showSerpModal, setShowSerpModal] = useState(false);
+
+  // Country picker state
+  const [countrySearch, setCountrySearch] = useState('');
+  const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+  const countryDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Available languages for the selected location
+  const selectedLocation = DFS_LOCATION_MAP.get(newLocationCode);
+  const availableLanguages = selectedLocation?.languages ?? [{ name: 'Russian', code: 'ru' }];
+
+  // Close country dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (countryDropdownRef.current && !countryDropdownRef.current.contains(e.target as Node)) {
+        setShowCountryDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  // Filtered countries for search
+  const filteredCountries = useMemo(() => {
+    if (!countrySearch.trim()) return DFS_LOCATIONS;
+    const q = countrySearch.toLowerCase();
+    return DFS_LOCATIONS.filter(
+      (loc) => loc.name.toLowerCase().includes(q) || loc.iso.toLowerCase().includes(q)
+    );
+  }, [countrySearch]);
+
+  const handleSelectCountry = (loc: typeof DFS_LOCATIONS[number]) => {
+    setNewLocationCode(loc.code);
+    setNewLanguage(loc.languages[0].code);
+    setCountrySearch('');
+    setShowCountryDropdown(false);
+  };
 
   // --- Data hooks ---
   const { data: sites = [], isLoading: sitesLoading } = useSites();
@@ -344,28 +381,78 @@ export default function RankPulseDashboard({ onBack }: { onBack?: () => void } =
               </div>
             </div>
 
-            <div className="w-20">
+            {/* Country selector with flag + search */}
+            <div className="w-52 relative" ref={countryDropdownRef}>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                Lang
+                Country
               </label>
-              <input
-                type="text"
-                value={newLanguage}
-                onChange={(e) => setNewLanguage(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
+              <button
+                type="button"
+                onClick={() => setShowCountryDropdown(!showCountryDropdown)}
+                className="w-full flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+              >
+                <span className="text-base leading-none">{selectedLocation ? isoToFlag(selectedLocation.iso) : '🌍'}</span>
+                <span className="truncate flex-1 text-left">{selectedLocation?.name ?? 'Select'}</span>
+                <ChevronDown size={14} className="text-gray-400 shrink-0" />
+              </button>
+              {showCountryDropdown && (
+                <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden">
+                  <div className="p-2 border-b border-gray-100">
+                    <div className="relative">
+                      <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        value={countrySearch}
+                        onChange={(e) => setCountrySearch(e.target.value)}
+                        placeholder="Search country..."
+                        className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto">
+                    {filteredCountries.length === 0 ? (
+                      <div className="px-3 py-4 text-sm text-gray-400 text-center">No countries found</div>
+                    ) : (
+                      filteredCountries.map((loc) => (
+                        <button
+                          key={loc.code}
+                          type="button"
+                          onClick={() => handleSelectCountry(loc)}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-indigo-50 transition-colors text-left ${
+                            loc.code === newLocationCode ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-700'
+                          }`}
+                        >
+                          <span className="text-base leading-none">{isoToFlag(loc.iso)}</span>
+                          <span className="flex-1 truncate">{loc.name}</span>
+                          <span className="text-[10px] text-gray-400 uppercase">{loc.iso}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="w-24">
+            {/* Language selector — auto-filtered by selected country */}
+            <div className="w-36">
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                Location
+                Language
               </label>
-              <input
-                type="number"
-                value={newLocationCode}
-                onChange={(e) => setNewLocationCode(Number(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
+              <div className="relative">
+                <select
+                  value={newLanguage}
+                  onChange={(e) => setNewLanguage(e.target.value)}
+                  className="appearance-none w-full px-3 py-2 pr-8 border border-gray-200 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  {availableLanguages.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
             </div>
 
             <button
@@ -463,9 +550,15 @@ export default function RankPulseDashboard({ onBack }: { onBack?: () => void } =
                     >
                       <td className="px-5 py-3.5">
                         <span className="text-sm font-medium text-gray-900">{kw.keyword}</span>
-                        <span className="ml-2 text-[10px] text-gray-400 uppercase">
-                          {kw.language}
-                        </span>
+                        {(() => {
+                          const kwLoc = DFS_LOCATION_MAP.get(kw.location_code);
+                          return (
+                            <span className="ml-2 inline-flex items-center gap-1 text-[10px] text-gray-400 uppercase">
+                              {kwLoc && <span className="text-xs">{isoToFlag(kwLoc.iso)}</span>}
+                              {kw.language}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="text-center px-3 py-3.5">
                         <span className="text-sm font-bold text-gray-900">

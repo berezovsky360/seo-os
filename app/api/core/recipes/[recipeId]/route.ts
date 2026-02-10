@@ -29,7 +29,7 @@ export async function PUT(
     // Whitelist allowed fields
     const ALLOWED_FIELDS = [
       'name', 'description', 'enabled', 'trigger_event',
-      'trigger_conditions', 'actions', 'site_ids',
+      'trigger_conditions', 'actions', 'site_ids', 'graph_layout',
     ]
     const updates: Record<string, any> = {}
     for (const key of ALLOWED_FIELDS) {

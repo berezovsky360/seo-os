@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, getEncryptionKey, isEncrypted } from '@/lib/utils/encryption'
 import { createWordPressClient } from '@/lib/wordpress/client'
+import { addGutenbergBlockMarkers } from '@/lib/utils/wordpress-blocks'
 
 // Server-side Supabase client with service role
 const supabase = createClient(
@@ -77,10 +78,13 @@ export async function POST(
       appPassword: appPassword,
     })
 
+    // Wrap column HTML with Gutenberg block comments for WordPress
+    const wpContent = addGutenbergBlockMarkers(post.content)
+
     // Update WordPress post with full Rank Math metadata
     const wpPost = await wpClient.updatePostWithRankMath(post.wp_post_id, {
       title: post.title,
-      content: post.content,
+      content: wpContent,
       status: post.status || 'publish',
       categories: categoryIds.length > 0 ? categoryIds : undefined,
       tags: tagIds.length > 0 ? tagIds : undefined,

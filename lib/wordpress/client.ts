@@ -38,6 +38,19 @@ interface WordPressPost {
 }
 
 /**
+ * SEO OS Connector Settings
+ * Configures how the WordPress plugin renders SEO tags.
+ */
+export interface SEOOSConnectorSettings {
+  seo_renderer: 'seo-os' | 'rankmath'
+  render_schema: boolean
+  render_og: boolean
+  render_twitter: boolean
+  schema_default_type: 'Article' | 'NewsArticle' | 'BlogPosting' | 'TechArticle' | 'HowTo'
+  separator: string // e.g. '—', '-', '|'
+}
+
+/**
  * Rank Math SEO Metadata Interface
  * Complete set of Rank Math fields for comprehensive SEO management
  */
@@ -337,6 +350,78 @@ export class WordPressClient {
   }
 
   /**
+   * Update a category
+   */
+  async updateCategory(id: number, data: { name?: string; slug?: string }): Promise<{ id: number; name: string; slug: string; count: number }> {
+    const response = await fetch(`${this.baseUrl}/categories/${id}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': this.auth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to update category')
+    }
+
+    return response.json()
+  }
+
+  /**
+   * Delete a category
+   */
+  async deleteCategory(id: number): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/categories/${id}?force=true`, {
+      method: 'DELETE',
+      headers: { 'Authorization': this.auth },
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to delete category')
+    }
+  }
+
+  /**
+   * Update a tag
+   */
+  async updateTag(id: number, data: { name?: string; slug?: string }): Promise<{ id: number; name: string; slug: string; count: number }> {
+    const response = await fetch(`${this.baseUrl}/tags/${id}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': this.auth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to update tag')
+    }
+
+    return response.json()
+  }
+
+  /**
+   * Delete a tag
+   */
+  async deleteTag(id: number): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/tags/${id}?force=true`, {
+      method: 'DELETE',
+      headers: { 'Authorization': this.auth },
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to delete tag')
+    }
+  }
+
+  /**
    * Extract Rank Math SEO data from post meta
    * Extracts ALL Rank Math fields (25+ fields) for comprehensive SEO management
    */
@@ -540,7 +625,13 @@ export class WordPressClient {
    * Ping connector plugin to check if it's installed and active
    * Returns plugin version and site info
    */
-  async pingConnector(): Promise<{ success: boolean; version?: string; message: string }> {
+  async pingConnector(): Promise<{
+    success: boolean
+    version?: string
+    seo_renderer?: 'seo-os' | 'rankmath'
+    rank_math?: boolean
+    message: string
+  }> {
     try {
       const response = await fetch(`${this.connectorUrl}/ping`, {
         headers: { 'Authorization': this.auth },
@@ -559,7 +650,9 @@ export class WordPressClient {
       return {
         success: true,
         version: data.version,
-        message: `Connector v${data.version} active`,
+        seo_renderer: data.seo_renderer,
+        rank_math: data.rank_math,
+        message: `Connector v${data.version} active (${data.seo_renderer === 'seo-os' ? 'SEO OS' : 'Rank Math'} mode)`,
       }
     } catch (error) {
       return {
@@ -581,6 +674,12 @@ export class WordPressClient {
     rank_math_version: string | null
     plugin_version: string
     php_version: string
+    seo_renderer: 'seo-os' | 'rankmath'
+    render_schema: boolean
+    render_og: boolean
+    render_twitter: boolean
+    total_posts: number
+    total_drafts: number
   } | null> {
     try {
       const response = await fetch(`${this.connectorUrl}/info`, {
@@ -599,6 +698,12 @@ export class WordPressClient {
         rank_math_version: data.rank_math?.version ?? null,
         plugin_version: data.connector_version,
         php_version: data.php_version,
+        seo_renderer: data.seo_renderer ?? 'rankmath',
+        render_schema: data.render_schema ?? true,
+        render_og: data.render_og ?? true,
+        render_twitter: data.render_twitter ?? true,
+        total_posts: data.total_posts ?? 0,
+        total_drafts: data.total_drafts ?? 0,
       }
     } catch {
       return null
@@ -778,12 +883,32 @@ export class WordPressClient {
 
   /**
    * Get rendered SEO head tags for a post via connector
-   * Returns the actual <title>, meta tags, OG tags, schema JSON-LD
+   * Returns structured head data (title, meta, OG, Twitter, Schema)
    */
   async getPostHeadTags(wpPostId: number): Promise<{
+    post_id: number
+    renderer: string
     title: string | null
-    head_html: string | null
-    robots: string | null
+    meta: {
+      description: string | null
+      robots: string
+      canonical: string
+    }
+    og: {
+      title: string
+      description: string
+      image: string | null
+      url: string
+      type: string
+      site_name: string
+    }
+    twitter: {
+      card: string
+      title: string
+      description: string
+      image: string | null
+    }
+    schema: string | null
   }> {
     const response = await fetch(`${this.connectorUrl}/posts/${wpPostId}/head`, {
       headers: { 'Authorization': this.auth },
@@ -793,7 +918,47 @@ export class WordPressClient {
       throw new Error(`Connector: Failed to get head tags for post ${wpPostId}: ${response.statusText}`)
     }
 
-    return response.json()
+    const data = await response.json()
+    return data.head || data
+  }
+
+  /**
+   * Get connector settings (renderer mode, OG/Twitter/Schema toggles)
+   */
+  async getConnectorSettings(): Promise<SEOOSConnectorSettings> {
+    const response = await fetch(`${this.connectorUrl}/settings`, {
+      headers: { 'Authorization': this.auth },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Connector: Failed to get settings: ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    return data.settings
+  }
+
+  /**
+   * Update connector settings (requires admin permissions on WP side)
+   */
+  async updateConnectorSettings(
+    settings: Partial<SEOOSConnectorSettings>
+  ): Promise<SEOOSConnectorSettings> {
+    const response = await fetch(`${this.connectorUrl}/settings`, {
+      method: 'POST',
+      headers: {
+        'Authorization': this.auth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(settings),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Connector: Failed to update settings: ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    return data.settings
   }
 
   /**

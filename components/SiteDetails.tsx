@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Site } from '../types';
 import { ArticleRecord } from '@/lib/services/articleService';
-import { ChevronLeft, ChevronRight, Settings, FileText, Tag, Folder, Save, CheckCircle2, MoreHorizontal, Filter, Search, Globe, AlertTriangle, Monitor, Smartphone, TrendingUp, BarChart3, AlertCircle, Calendar, ChevronDown, Plus, Wifi, Trash2, Edit, Eye, GripVertical, Settings2, TrendingDown, X, Loader2, RefreshCw, Download, Puzzle, ExternalLink, Link2, Image as ImageIcon, BookOpen, Shield, Hash, Upload, RefreshCcw, Wand2, Sparkles, Palette } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Settings, FileText, Tag, Folder, Save, CheckCircle2, CheckSquare, MoreHorizontal, Filter, Search, Globe, AlertTriangle, Monitor, Smartphone, TrendingUp, BarChart3, AlertCircle, Calendar, ChevronDown, Plus, Wifi, Trash2, Edit, Eye, GripVertical, Settings2, TrendingDown, X, Loader2, RefreshCw, Download, Puzzle, ExternalLink, Link2, Image as ImageIcon, BookOpen, Shield, Hash, Upload, RefreshCcw, Wand2, Sparkles, Palette, ShoppingBag, Layout } from 'lucide-react';
 import { useSite, useUpdateSite, useDeleteSite } from '@/hooks/useSites';
 import { useArticles, useCreateArticle, usePublishArticleToWordPress } from '@/hooks/useArticles';
 import { useSyncPosts, usePosts } from '@/hooks/usePosts';
@@ -11,6 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import PublishModal from './PublishModal';
 import ArticleEditor from './ArticleEditor';
 import SEOScoreIndicator from './SEOScoreIndicator';
+import AIGeneratePopover from './AIGeneratePopover';
 
 interface SiteDetailsProps {
     siteId: string;
@@ -32,6 +33,7 @@ interface ContentItem {
     word_count: number | null;
     status: string;
     wp_post_id: number | null;
+    slug: string | null;
     url: string | null;
     published_at: string | null;
     created_at: string;
@@ -52,25 +54,64 @@ interface ContentItem {
     originalPost?: any;
 }
 
-// Available columns for customization
-const AVAILABLE_COLUMNS = [
-    { id: 'title', label: 'Title', required: true },
-    { id: 'source', label: 'Source' },
-    { id: 'keyword', label: 'Keyword' },
-    { id: 'seo_score', label: 'SEO Score' },
-    { id: 'readability', label: 'Readability' },
-    { id: 'word_count', label: 'Words' },
-    { id: 'links', label: 'Links' },
-    { id: 'images', label: 'Images' },
-    { id: 'seo_title', label: 'SEO Title' },
-    { id: 'seo_description', label: 'Meta Desc' },
-    { id: 'robots', label: 'Robots' },
-    { id: 'schema_type', label: 'Schema' },
-    { id: 'canonical', label: 'Canonical' },
-    { id: 'published_at', label: 'Published' },
-    { id: 'status', label: 'Status' },
-    { id: 'actions', label: 'Actions', required: true },
-];
+// Column definition with module group
+interface ColumnDef {
+    id: string;
+    label: string;
+    required?: boolean;
+    group: 'core' | 'rankmath' | 'nana-banana' | 'ai-writer';
+}
+
+// Dynamic columns based on enabled modules
+function getAvailableColumns(modules: { rm: boolean; nana: boolean }): ColumnDef[] {
+    const cols: ColumnDef[] = [
+        { id: 'title', label: 'Title', required: true, group: 'core' },
+        { id: 'source', label: 'Source', group: 'core' },
+        { id: 'keyword', label: 'Keyword', group: 'core' },
+        { id: 'seo_score', label: 'SEO Score', group: 'core' },
+        { id: 'word_count', label: 'Words', group: 'core' },
+        { id: 'published_at', label: 'Published', group: 'core' },
+        { id: 'status', label: 'Status', group: 'core' },
+        { id: 'actions', label: 'Actions', required: true, group: 'core' },
+    ];
+
+    if (modules.rm) {
+        // Insert RM columns after seo_score (index 4)
+        const insertAt = 4;
+        const rmCols: ColumnDef[] = [
+            { id: 'seo_title', label: 'SEO Title', group: 'rankmath' },
+            { id: 'seo_description', label: 'Meta Desc', group: 'rankmath' },
+            { id: 'serp_preview', label: 'SERP Preview', group: 'rankmath' },
+            { id: 'readability', label: 'Readability', group: 'rankmath' },
+            { id: 'links', label: 'Links', group: 'rankmath' },
+            { id: 'images', label: 'Images', group: 'rankmath' },
+            { id: 'robots', label: 'Robots', group: 'rankmath' },
+            { id: 'schema_type', label: 'Schema', group: 'rankmath' },
+            { id: 'canonical', label: 'Canonical', group: 'rankmath' },
+            { id: 'og_title', label: 'OG Title', group: 'rankmath' },
+        ];
+        cols.splice(insertAt + 1, 0, ...rmCols);
+    }
+
+    if (modules.nana) {
+        // Insert cover column before actions
+        const actionsIdx = cols.findIndex(c => c.id === 'actions');
+        cols.splice(actionsIdx, 0, { id: 'cover', label: 'Cover', group: 'nana-banana' });
+    }
+
+    return cols;
+}
+
+// Character count color helper
+function charCountColor(current: number, max: number): string {
+    if (current === 0) return 'text-gray-300';
+    if (current > max) return 'text-rose-500';
+    if (current > max * 0.9) return 'text-amber-500';
+    return 'text-gray-400';
+}
+
+type StatusTab = 'all' | 'unoptimized' | 'pending-sync' | 'drafts';
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
 const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
     const [activeTab, setActiveTab] = useState<Tab>('content');
@@ -89,6 +130,14 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
     const toast = useToast();
     const { isModuleEnabled } = useCore();
     const nanaBananaEnabled = isModuleEnabled('nana-banana');
+    const rmBridgeEnabled = isModuleEnabled('rankmath-bridge');
+    const aiWriterEnabled = isModuleEnabled('ai-writer');
+
+    // Dynamic columns based on modules
+    const availableColumns = React.useMemo(
+        () => getAvailableColumns({ rm: rmBridgeEnabled, nana: nanaBananaEnabled }),
+        [rmBridgeEnabled, nanaBananaEnabled]
+    );
 
     // Cover Style State
     const [coverStylePrompt, setCoverStylePrompt] = useState('');
@@ -141,17 +190,15 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
     const [newCategoryName, setNewCategoryName] = useState('');
     const [newTagName, setNewTagName] = useState('');
     const [isCreatingCatTag, setIsCreatingCatTag] = useState(false);
+    const [editingCatTag, setEditingCatTag] = useState<{ type: 'category' | 'tag'; id: number; name: string } | null>(null);
+    const [isSavingCatTag, setIsSavingCatTag] = useState(false);
+    const [deletingCatTagId, setDeletingCatTagId] = useState<number | null>(null);
 
     // Bulk Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [bulkProcessing, setBulkProcessing] = useState(false);
     const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
     const [showBulkStatusDropdown, setShowBulkStatusDropdown] = useState(false);
-
-    // Clear selection when contentFilter changes
-    useEffect(() => {
-        setSelectedIds(new Set());
-    }, [contentFilter]);
 
     const toggleSelect = (id: string) => {
         setSelectedIds(prev => {
@@ -162,12 +209,26 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
         });
     };
 
-    const toggleSelectAll = () => {
-        if (selectedIds.size === filteredContent.length) {
-            setSelectedIds(new Set());
+    const toggleSelectAll = (items: typeof filteredContent) => {
+        const itemIds = items.map(item => item.id);
+        const allOnPage = itemIds.every(id => selectedIds.has(id));
+        if (allOnPage) {
+            setSelectedIds(prev => {
+                const next = new Set(prev);
+                itemIds.forEach(id => next.delete(id));
+                return next;
+            });
         } else {
-            setSelectedIds(new Set(filteredContent.map(item => item.id)));
+            setSelectedIds(prev => new Set([...prev, ...itemIds]));
         }
+    };
+
+    const selectAllPages = () => {
+        setSelectedIds(new Set(filteredContent.map(item => item.id)));
+    };
+
+    const clearSelection = () => {
+        setSelectedIds(new Set());
     };
 
     const handleBulkStatusChange = async (status: string) => {
@@ -301,21 +362,107 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
         setBulkProcessing(false);
     };
 
+    // Bulk AI generation
+    const handleBulkGenerateTitles = async () => {
+        setShowBulkStatusDropdown(false);
+        if (selectedIds.size === 0) return;
+        setBulkProcessing(true);
+        const items = filteredContent.filter(item => selectedIds.has(item.id));
+        setBulkProgress({ current: 0, total: items.length });
+        let success = 0;
+        for (const item of items) {
+            try {
+                const postId = item.source === 'wordpress' ? item.id : item.originalArticle?.id;
+                if (!postId) continue;
+                const res = await fetch('/api/ai-writer/generate-title', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ post_id: postId, site_id: siteId, keyword: item.keyword }),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.titles?.[0]) {
+                        updateSeoEdit(item.id, 'seo_title', data.titles[0]);
+                        success++;
+                    }
+                }
+            } catch (err) {
+                console.error('Bulk title gen failed for', item.id, err);
+            }
+            setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        }
+        setBulkProcessing(false);
+        toast.success(`Generated titles for ${success}/${items.length} items`);
+    };
+
+    const handleBulkGenerateDescriptions = async () => {
+        setShowBulkStatusDropdown(false);
+        if (selectedIds.size === 0) return;
+        setBulkProcessing(true);
+        const items = filteredContent.filter(item => selectedIds.has(item.id));
+        setBulkProgress({ current: 0, total: items.length });
+        let success = 0;
+        for (const item of items) {
+            try {
+                const postId = item.source === 'wordpress' ? item.id : item.originalArticle?.id;
+                if (!postId) continue;
+                const res = await fetch('/api/ai-writer/generate-description', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ post_id: postId, site_id: siteId, keyword: item.keyword }),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.descriptions?.[0]) {
+                        updateSeoEdit(item.id, 'seo_description', data.descriptions[0]);
+                        success++;
+                    }
+                }
+            } catch (err) {
+                console.error('Bulk desc gen failed for', item.id, err);
+            }
+            setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        }
+        setBulkProcessing(false);
+        toast.success(`Generated descriptions for ${success}/${items.length} items`);
+    };
+
     // Column Customization State
     const [showColumnCustomizer, setShowColumnCustomizer] = useState(false);
     const [visibleColumns, setVisibleColumns] = useState<string[]>([
         'title',
-        'source',
-        'keyword',
-        'seo_score',
-        'readability',
-        'word_count',
-        'links',
-        'images',
+        'seo_title',
+        'seo_description',
+        'serp_preview',
         'status',
         'actions',
     ]);
     const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
+
+    // Status tab filter
+    const [statusTab, setStatusTab] = useState<StatusTab>('all');
+
+    // Inline SEO editing state (BulkEdit-style)
+    const [seoEdits, setSeoEdits] = useState<Record<string, { seo_title?: string; seo_description?: string; slug?: string }>>({});
+    const [isSavingEdits, setIsSavingEdits] = useState(false);
+
+    // Content search
+    const [contentSearch, setContentSearch] = useState('');
+
+    // Pagination
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState<number>(10);
+
+    // Clear selection and reset page when filters change
+    useEffect(() => {
+        setSelectedIds(new Set());
+        setCurrentPage(1);
+    }, [contentFilter, statusTab, contentSearch]);
+
+    // Reset page when page size changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [itemsPerPage]);
 
     // Initialize form with site data
     useEffect(() => {
@@ -380,6 +527,53 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
             toast.error(err instanceof Error ? err.message : 'Failed to create');
         } finally {
             setIsCreatingCatTag(false);
+        }
+    };
+
+    const handleUpdateCatTag = async (type: 'category' | 'tag', id: number, name: string) => {
+        if (!name.trim()) return;
+        setIsSavingCatTag(true);
+        try {
+            const response = await fetch(`/api/sites/${siteId}/categories-tags`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, id, name: name.trim() }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to update');
+            toast.success(`${type === 'category' ? 'Category' : 'Tag'} updated!`);
+            if (type === 'category') {
+                setWpCategories(prev => prev.map(c => c.id === id ? data.item : c));
+            } else {
+                setWpTags(prev => prev.map(t => t.id === id ? data.item : t));
+            }
+            setEditingCatTag(null);
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Failed to update');
+        } finally {
+            setIsSavingCatTag(false);
+        }
+    };
+
+    const handleDeleteCatTag = async (type: 'category' | 'tag', id: number, name: string) => {
+        if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
+        setDeletingCatTagId(id);
+        try {
+            const response = await fetch(`/api/sites/${siteId}/categories-tags?type=${type}&id=${id}`, {
+                method: 'DELETE',
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to delete');
+            toast.success(`${type === 'category' ? 'Category' : 'Tag'} "${name}" deleted!`);
+            if (type === 'category') {
+                setWpCategories(prev => prev.filter(c => c.id !== id));
+            } else {
+                setWpTags(prev => prev.filter(t => t.id !== id));
+            }
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Failed to delete');
+        } finally {
+            setDeletingCatTagId(null);
         }
     };
 
@@ -524,6 +718,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                 word_count: post.word_count,
                 status: post.status,
                 wp_post_id: post.wp_post_id,
+                slug: post.slug ?? null,
                 url: post.url,
                 published_at: post.published_at,
                 created_at: post.created_at,
@@ -554,6 +749,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                 word_count: article.word_count,
                 status: article.status,
                 wp_post_id: article.wp_post_id,
+                slug: null,
                 url: null,
                 published_at: article.published_at,
                 created_at: article.created_at,
@@ -577,9 +773,86 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
     }, [posts, articles]);
 
     const filteredContent = React.useMemo(() => {
-        if (contentFilter === 'all') return contentItems;
-        return contentItems.filter(item => item.source === contentFilter);
-    }, [contentItems, contentFilter]);
+        let items = contentItems;
+
+        // Source filter
+        if (contentFilter !== 'all') {
+            items = items.filter(item => item.source === contentFilter);
+        }
+
+        // Status tab filter
+        if (statusTab === 'unoptimized') {
+            items = items.filter(item => !item.seo_title || !item.seo_description);
+        } else if (statusTab === 'pending-sync') {
+            items = items.filter(item => item.source === 'generated' && !item.wp_post_id);
+        } else if (statusTab === 'drafts') {
+            items = items.filter(item => item.status === 'draft');
+        }
+
+        // Search filter
+        if (contentSearch.trim()) {
+            const q = contentSearch.toLowerCase();
+            items = items.filter(item =>
+                (item.title && item.title.toLowerCase().includes(q)) ||
+                (item.keyword && item.keyword.toLowerCase().includes(q)) ||
+                (item.seo_title && item.seo_title.toLowerCase().includes(q))
+            );
+        }
+
+        return items;
+    }, [contentItems, contentFilter, statusTab, contentSearch]);
+
+    // Status tab counts
+    const statusCounts = React.useMemo(() => ({
+        all: contentItems.length,
+        unoptimized: contentItems.filter(i => !i.seo_title || !i.seo_description).length,
+        'pending-sync': contentItems.filter(i => i.source === 'generated' && !i.wp_post_id).length,
+        drafts: contentItems.filter(i => i.status === 'draft').length,
+    }), [contentItems]);
+
+    // Inline edit helpers
+    const updateSeoEdit = (itemId: string, field: 'seo_title' | 'seo_description' | 'slug', value: string) => {
+        setSeoEdits(prev => ({
+            ...prev,
+            [itemId]: { ...prev[itemId], [field]: value },
+        }));
+    };
+
+    const getSeoEditValue = (itemId: string, field: 'seo_title' | 'seo_description' | 'slug', original: string | null) => {
+        return seoEdits[itemId]?.[field] ?? original ?? '';
+    };
+
+    const changedItemIds = React.useMemo(() => Object.keys(seoEdits), [seoEdits]);
+
+    const discardSeoEdits = () => setSeoEdits({});
+
+    const saveSeoEdits = async () => {
+        if (changedItemIds.length === 0) return;
+        setIsSavingEdits(true);
+        let success = 0;
+        for (const itemId of changedItemIds) {
+            const edits = seoEdits[itemId];
+            if (!edits) continue;
+            try {
+                const item = contentItems.find(i => i.id === itemId);
+                if (!item) continue;
+                const apiUrl = item.source === 'wordpress'
+                    ? `/api/posts/${itemId.replace('wp-', '')}`
+                    : `/api/articles/${itemId.replace('gen-', '')}`;
+                await fetch(apiUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(edits),
+                });
+                success++;
+            } catch {}
+        }
+        toast.success(`Saved ${success}/${changedItemIds.length} changes`);
+        setSeoEdits({});
+        queryClient.invalidateQueries({ queryKey: ['articles'] });
+        queryClient.invalidateQueries({ queryKey: ['posts'] });
+        setIsSavingEdits(false);
+    };
 
     const handleDeleteSite = () => {
         if (!site) return;
@@ -1019,7 +1292,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
 
     // Column Customization Handlers
     const toggleColumn = (columnId: string) => {
-        const column = AVAILABLE_COLUMNS.find((col) => col.id === columnId);
+        const column = availableColumns.find((col) => col.id === columnId);
         if (column?.required) return; // Can't hide required columns
 
         if (visibleColumns.includes(columnId)) {
@@ -1130,175 +1403,335 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
         const wpCount = contentItems.filter(i => i.source === 'wordpress').length;
         const genCount = contentItems.filter(i => i.source === 'generated').length;
 
-        return (
-            <div className="border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-                <div className="bg-gray-50/50 p-4 border-b border-gray-100 flex justify-between items-center flex-wrap gap-4">
-                    <div className="flex gap-2">
-                        {/* Source filter pills */}
-                        <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-                            <button
-                                onClick={() => setContentFilter('all')}
-                                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                                    contentFilter === 'all' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'
-                                }`}
-                            >
-                                All ({contentItems.length})
-                            </button>
-                            <button
-                                onClick={() => setContentFilter('wordpress')}
-                                className={`px-3 py-1.5 text-xs font-medium transition-colors border-l border-gray-200 ${
-                                    contentFilter === 'wordpress' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'
-                                }`}
-                            >
-                                WP ({wpCount})
-                            </button>
-                            <button
-                                onClick={() => setContentFilter('generated')}
-                                className={`px-3 py-1.5 text-xs font-medium transition-colors border-l border-gray-200 ${
-                                    contentFilter === 'generated' ? 'bg-purple-600 text-white' : 'text-gray-600 hover:bg-gray-50'
-                                }`}
-                            >
-                                SEO OS ({genCount})
-                            </button>
-                        </div>
-                        <div className="relative">
-                            <button
-                                onClick={() => setShowColumnCustomizer(!showColumnCustomizer)}
-                                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 flex items-center gap-2"
-                            >
-                                <Settings2 size={14} />
-                                Columns
-                            </button>
-                            {showColumnCustomizer && (
-                                <div className="absolute top-full left-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-10 w-64">
-                                    <p className="text-xs font-medium text-gray-700 mb-2">Show/Hide Columns</p>
-                                    <div className="space-y-2">
-                                        {AVAILABLE_COLUMNS.map((column) => (
-                                            <label
-                                                key={column.id}
-                                                className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer"
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={visibleColumns.includes(column.id)}
-                                                    onChange={() => toggleColumn(column.id)}
-                                                    disabled={column.required}
-                                                    className="rounded border-gray-300"
-                                                />
-                                                {column.label}
-                                                {column.required && (
-                                                    <span className="text-xs text-gray-400">(required)</span>
-                                                )}
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+        // Pagination
+        const totalPages = Math.ceil(filteredContent.length / itemsPerPage);
+        const startIdx = (currentPage - 1) * itemsPerPage;
+        const endIdx = Math.min(startIdx + itemsPerPage, filteredContent.length);
+        const paginatedItems = filteredContent.slice(startIdx, endIdx);
+
+        // Page numbers for pagination
+        const getPageNumbers = () => {
+            const pages: number[] = [];
+            const maxVisible = 5;
+            let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+            const end = Math.min(totalPages, start + maxVisible - 1);
+            if (end - start + 1 < maxVisible) start = Math.max(1, end - maxVisible + 1);
+            for (let i = start; i <= end; i++) pages.push(i);
+            return pages;
+        };
+
+        // Group columns by module for customizer
+        const columnGroups = [
+            { key: 'core', label: 'Core', columns: availableColumns.filter(c => c.group === 'core') },
+            ...(rmBridgeEnabled ? [{ key: 'rankmath', label: 'RankMath Bridge', columns: availableColumns.filter(c => c.group === 'rankmath') }] : []),
+            ...(nanaBananaEnabled ? [{ key: 'nana-banana', label: 'Nana Banana', columns: availableColumns.filter(c => c.group === 'nana-banana') }] : []),
+        ];
+
+        // Status icon renderer
+        const renderStatusIcon = (status: string, source: string) => {
+            if (status === 'publish' || status === 'published') {
+                return (
+                    <div className="w-9 h-9 rounded-full bg-emerald-50 flex items-center justify-center" title="Published">
+                        <CheckCircle2 size={18} className="text-emerald-500" />
                     </div>
-                    <div className="flex items-center gap-3">
-                        <div className="relative">
-                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                            <input type="text" placeholder="Search content..." className="pl-8 pr-4 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
-                        </div>
-                        <button
-                            onClick={() => setShowNewArticleDialog(true)}
-                            className="flex items-center gap-2 px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200"
-                        >
-                            <Plus size={14} />
-                            New Post
-                        </button>
+                );
+            }
+            if (status === 'pending' || status === 'reviewed') {
+                return (
+                    <div className="w-9 h-9 rounded-full bg-amber-50 flex items-center justify-center" title="Pending">
+                        <Edit size={18} className="text-amber-500" />
+                    </div>
+                );
+            }
+            if (status === 'private') {
+                return (
+                    <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center" title="Private">
+                        <Shield size={18} className="text-gray-400" />
+                    </div>
+                );
+            }
+            // draft
+            return (
+                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center" title="Draft">
+                    <FileText size={18} className="text-gray-400" />
+                </div>
+            );
+        };
+
+        // URL display helper — site domain + editable slug
+        const renderUrlSite = (item: ContentItem) => {
+            const siteUrl = (site?.url || '').replace(/^https?:\/\//, '');
+            const originalSlug = item.slug || (item.url ? (() => { try { return new URL(item.url.startsWith('http') ? item.url : `https://${item.url}`).pathname; } catch { return ''; } })() : '');
+            const editableSlug = getSeoEditValue(item.id, 'slug', originalSlug || null);
+            const slugLen = editableSlug.length;
+            return (
+                <div className="min-w-[200px]">
+                    <div
+                        className="text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer mb-1.5"
+                        onClick={() => {
+                            if (item.originalArticle) handleEditArticle(item.originalArticle);
+                            else if (item.originalPost) handleEditWPPost(item.originalPost);
+                        }}
+                    >
+                        {siteUrl}
+                    </div>
+                    <div className="flex items-start gap-1">
+                        <span className="text-xs text-gray-400 mt-1.5 flex-shrink-0">/</span>
+                        <input
+                            type="text"
+                            value={editableSlug.replace(/^\//, '').replace(/\/$/, '')}
+                            onChange={e => {
+                                const v = e.target.value.toLowerCase().replace(/[^a-z0-9\-]/g, '-').replace(/--+/g, '-');
+                                updateSeoEdit(item.id, 'slug', `/${v}/`);
+                            }}
+                            placeholder="page-slug"
+                            className="w-full border border-gray-100 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 rounded-lg text-xs text-gray-700 px-2 py-1.5 placeholder:text-gray-300 bg-white transition-all"
+                        />
+                        <span className="text-xs text-gray-400 mt-1.5 flex-shrink-0">/</span>
+                    </div>
+                    <div className="mt-1 text-right">
+                        <span className={`text-[10px] font-medium ${
+                            slugLen === 0 ? 'text-gray-300' : slugLen > 75 ? 'text-rose-500' : slugLen > 60 ? 'text-amber-500' : 'text-gray-400'
+                        }`}>
+                            {slugLen > 75 ? 'Too long' : slugLen > 60 ? 'Consider shorter' : slugLen > 0 ? 'Good' : ''}
+                        </span>
                     </div>
                 </div>
+            );
+        };
 
-                {/* Bulk Actions Bar */}
-                {selectedIds.size > 0 && (
-                    <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 flex items-center justify-between">
-                        <span className="text-sm font-semibold">
-                            Bulk Actions for {selectedIds.size} selected:
-                        </span>
-                        <div className="flex items-center gap-2">
-                            {bulkProcessing ? (
-                                <div className="flex items-center gap-2 text-sm">
-                                    <Loader2 size={14} className="animate-spin" />
-                                    <span>{bulkProgress.current}/{bulkProgress.total}</span>
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="relative">
-                                        <button
-                                            onClick={() => setShowBulkStatusDropdown(!showBulkStatusDropdown)}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-semibold transition-colors"
-                                        >
-                                            <RefreshCcw size={12} />
-                                            Change Status
-                                            <ChevronDown size={12} />
-                                        </button>
-                                        {showBulkStatusDropdown && (
-                                            <div className="absolute top-full mt-1 right-0 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-30 min-w-[140px]">
-                                                {['draft', 'reviewed', 'published'].map(s => (
+        return (
+            <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm flex flex-col">
+                {/* Toolbar */}
+                <div className="px-6 py-3 border-b border-gray-100">
+                    <div className="flex items-center justify-end">
+                        <div className="flex items-center gap-3">
+                            {/* Column customizer */}
+                            <div className="relative">
+                                <button
+                                    onClick={() => setShowColumnCustomizer(!showColumnCustomizer)}
+                                    className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                                >
+                                    <Settings2 size={16} />
+                                    Columns
+                                </button>
+                                {showColumnCustomizer && (
+                                    <div className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-xl p-4 z-20 w-80 max-h-[450px] overflow-y-auto">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <p className="text-sm font-semibold text-gray-900">Visible Columns</p>
+                                            <button onClick={() => setShowColumnCustomizer(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X size={14} className="text-gray-400" /></button>
+                                        </div>
+                                        {/* Source filter */}
+                                        <div className="mb-4 pb-3 border-b border-gray-100">
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Source</p>
+                                            <div className="flex gap-2">
+                                                {([
+                                                    { id: 'all' as ContentFilter, label: 'All', count: contentItems.length },
+                                                    { id: 'wordpress' as ContentFilter, label: 'WordPress', count: wpCount },
+                                                    { id: 'generated' as ContentFilter, label: 'SEO OS', count: genCount },
+                                                ]).map(f => (
                                                     <button
-                                                        key={s}
-                                                        onClick={() => handleBulkStatusChange(s)}
-                                                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 capitalize"
+                                                        key={f.id}
+                                                        onClick={() => setContentFilter(f.id)}
+                                                        className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                                                            contentFilter === f.id
+                                                                ? 'bg-indigo-600 text-white'
+                                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                        }`}
                                                     >
-                                                        {s}
+                                                        {f.label} ({f.count})
                                                     </button>
                                                 ))}
                                             </div>
+                                        </div>
+                                        {columnGroups.map(group => (
+                                            <div key={group.key} className="mb-3 last:mb-0">
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">{group.label}</p>
+                                                <div className="space-y-1">
+                                                    {group.columns.map(column => (
+                                                        <label key={column.id} className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer px-2 py-1 rounded-lg hover:bg-gray-50">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={visibleColumns.includes(column.id)}
+                                                                onChange={() => toggleColumn(column.id)}
+                                                                disabled={column.required}
+                                                                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                            />
+                                                            {column.label}
+                                                            {column.required && <span className="text-xs text-gray-400">(required)</span>}
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {!rmBridgeEnabled && (
+                                            <div className="mt-3 pt-3 border-t border-gray-100">
+                                                <p className="text-[10px] text-gray-400 px-1">Enable <strong>RankMath Bridge</strong> in Marketplace for SEO columns</p>
+                                            </div>
+                                        )}
+                                        {!nanaBananaEnabled && (
+                                            <div className="mt-1">
+                                                <p className="text-[10px] text-gray-400 px-1">Enable <strong>Nana Banana</strong> for cover image column</p>
+                                            </div>
                                         )}
                                     </div>
+                                )}
+                            </div>
+                            <button className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                                <Download size={16} />
+                                Export CSV
+                            </button>
+                            {/* Bulk Actions */}
+                            {selectedIds.size > 0 ? (
+                                <div className="relative">
                                     <button
-                                        onClick={handleBulkPublish}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-semibold transition-colors"
+                                        onClick={() => setShowBulkStatusDropdown(!showBulkStatusDropdown)}
+                                        className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors shadow-sm"
                                     >
-                                        <Upload size={12} />
-                                        Sync to WP
+                                        <CheckSquare size={16} />
+                                        Bulk Actions ({selectedIds.size})
+                                        <ChevronDown size={14} />
                                     </button>
-                                    {nanaBananaEnabled && (
-                                        <button
-                                            onClick={handleBulkGenerateCovers}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500/30 hover:bg-yellow-500/50 rounded-lg text-xs font-semibold transition-colors"
-                                        >
-                                            <Wand2 size={12} />
-                                            Generate Covers
-                                        </button>
+                                    {showBulkStatusDropdown && (
+                                        <div className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-xl py-1 z-30 min-w-[180px]">
+                                            {bulkProcessing ? (
+                                                <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-500">
+                                                    <Loader2 size={14} className="animate-spin" />
+                                                    {bulkProgress.current}/{bulkProgress.total}
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <p className="px-4 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Change Status</p>
+                                                    {['draft', 'reviewed', 'published'].map(s => (
+                                                        <button key={s} onClick={() => handleBulkStatusChange(s)} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 capitalize">{s}</button>
+                                                    ))}
+                                                    <div className="border-t border-gray-100 my-1" />
+                                                    <button onClick={handleBulkPublish} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Upload size={14} /> Sync to WordPress</button>
+                                                    {nanaBananaEnabled && (
+                                                        <button onClick={handleBulkGenerateCovers} className="w-full text-left px-4 py-2 text-sm text-yellow-700 hover:bg-yellow-50 flex items-center gap-2"><Wand2 size={14} /> Generate Covers</button>
+                                                    )}
+                                                    {aiWriterEnabled && (
+                                                        <>
+                                                            <div className="border-t border-gray-100 my-1" />
+                                                            <p className="px-4 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">AI Writer</p>
+                                                            <button onClick={handleBulkGenerateTitles} className="w-full text-left px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-2"><Sparkles size={14} /> Generate Titles</button>
+                                                            <button onClick={handleBulkGenerateDescriptions} className="w-full text-left px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-2"><Sparkles size={14} /> Generate Descriptions</button>
+                                                        </>
+                                                    )}
+                                                    <div className="border-t border-gray-100 my-1" />
+                                                    <button onClick={handleBulkDelete} className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50 flex items-center gap-2"><Trash2 size={14} /> Delete</button>
+                                                    <div className="border-t border-gray-100 my-1" />
+                                                    <button onClick={() => setSelectedIds(new Set())} className="w-full text-left px-4 py-2 text-sm text-gray-500 hover:bg-gray-50">Deselect All</button>
+                                                </>
+                                            )}
+                                        </div>
                                     )}
-                                    <button
-                                        onClick={handleBulkDelete}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/30 hover:bg-red-500/50 rounded-lg text-xs font-semibold transition-colors"
-                                    >
-                                        <Trash2 size={12} />
-                                        Delete
-                                    </button>
-                                    <button
-                                        onClick={() => setSelectedIds(new Set())}
-                                        className="px-3 py-1.5 text-xs font-semibold hover:bg-white/10 rounded-lg transition-colors"
-                                    >
-                                        Deselect All
-                                    </button>
-                                </>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => setShowNewArticleDialog(true)}
+                                    className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors shadow-sm"
+                                >
+                                    <Plus size={16} />
+                                    New Post
+                                </button>
                             )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Status Tabs */}
+                <div className="px-6 border-b border-gray-100">
+                    <div className="flex gap-8 pt-1">
+                        {([
+                            { id: 'all' as StatusTab, label: 'All Pages', count: statusCounts.all },
+                            { id: 'unoptimized' as StatusTab, label: 'Unoptimized', count: statusCounts.unoptimized },
+                            { id: 'pending-sync' as StatusTab, label: 'Pending Sync', count: statusCounts['pending-sync'] },
+                            { id: 'drafts' as StatusTab, label: 'Drafts', count: statusCounts.drafts },
+                        ]).map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setStatusTab(tab.id)}
+                                className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
+                                    statusTab === tab.id
+                                        ? 'border-indigo-600 text-indigo-600'
+                                        : 'border-transparent text-gray-400 hover:text-gray-600'
+                                }`}
+                            >
+                                {tab.label} ({tab.count})
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Unsaved Changes Save Bar — above table */}
+                {changedItemIds.length > 0 && (
+                    <div className="px-6 py-3 border-b border-amber-200 bg-amber-50 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5 text-sm text-amber-700">
+                            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+                            {changedItemIds.length} unsaved change{changedItemIds.length !== 1 ? 's' : ''}
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={discardSeoEdits}
+                                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-amber-100 rounded-lg transition-colors"
+                            >
+                                Discard
+                            </button>
+                            <button
+                                onClick={saveSeoEdits}
+                                disabled={isSavingEdits}
+                                className="px-5 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {isSavingEdits ? (
+                                    <><Loader2 size={14} className="animate-spin" /> Saving...</>
+                                ) : (
+                                    <><Save size={14} /> Save Changes</>
+                                )}
+                            </button>
                         </div>
                     </div>
                 )}
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-gray-50/50 text-gray-500 font-semibold border-b border-gray-100">
-                            <tr>
-                                <th className="px-6 py-4 w-10">
+                {/* Search bar */}
+                {filteredContent.length > 0 && (
+                    <div className="px-6 py-3 border-b border-gray-50 bg-gray-50/30">
+                        <div className="relative max-w-sm">
+                            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                                type="text"
+                                value={contentSearch}
+                                onChange={e => setContentSearch(e.target.value)}
+                                placeholder="Search by title, keyword, or SEO title..."
+                                className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* Table */}
+                <div className="overflow-auto flex-1">
+                    <table className="w-full">
+                        <thead className="sticky top-0 z-10">
+                            <tr className="bg-gray-50/80 border-b border-gray-100">
+                                <th className="px-6 py-3.5 w-12">
                                     <input
                                         type="checkbox"
-                                        className="rounded-md border-gray-300"
-                                        checked={filteredContent.length > 0 && selectedIds.size === filteredContent.length}
-                                        ref={(el) => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filteredContent.length; }}
-                                        onChange={toggleSelectAll}
+                                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                        checked={paginatedItems.length > 0 && paginatedItems.every(item => selectedIds.has(item.id))}
+                                        ref={(el) => { if (el) { const pageSelected = paginatedItems.filter(item => selectedIds.has(item.id)).length; el.indeterminate = pageSelected > 0 && pageSelected < paginatedItems.length; } }}
+                                        onChange={() => toggleSelectAll(paginatedItems)}
                                     />
                                 </th>
                                 {visibleColumns.map((columnId) => {
-                                    const column = AVAILABLE_COLUMNS.find((col) => col.id === columnId);
+                                    const column = availableColumns.find((col) => col.id === columnId);
                                     if (!column) return null;
+                                    // Custom labels for design
+                                    const headerLabel = columnId === 'title' ? 'URL & SITE'
+                                        : columnId === 'seo_title' ? 'PAGE SEO TITLE'
+                                        : columnId === 'seo_description' ? 'META DESCRIPTION'
+                                        : columnId === 'serp_preview' ? 'SERP PREVIEW'
+                                        : column.label.toUpperCase();
                                     return (
                                         <th
                                             key={columnId}
@@ -1306,41 +1739,64 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                             onDragStart={() => handleDragStart(columnId)}
                                             onDragOver={(e) => handleDragOver(e, columnId)}
                                             onDragEnd={handleDragEnd}
-                                            className={`px-6 py-4 cursor-move ${
-                                                draggedColumn === columnId ? 'opacity-50' : ''
+                                            className={`px-6 py-3.5 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-move whitespace-nowrap select-none group ${
+                                                draggedColumn === columnId ? 'opacity-50 bg-indigo-50' : ''
                                             }`}
                                         >
-                                            <div className="flex items-center gap-2">
-                                                <GripVertical size={14} className="text-gray-400" />
-                                                {column.label}
+                                            <div className="flex items-center gap-1.5">
+                                                <GripVertical size={12} className="text-gray-300 group-hover:text-gray-500 transition-colors flex-shrink-0" />
+                                                {headerLabel}
                                             </div>
                                         </th>
                                     );
                                 })}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-50">
+                        <tbody>
+                            {/* Select-all-pages banner */}
+                            {!isLoading && paginatedItems.length > 0 && paginatedItems.every(item => selectedIds.has(item.id)) && selectedIds.size < filteredContent.length && (
+                                <tr>
+                                    <td colSpan={visibleColumns.length + 1} className="px-6 py-2.5 bg-indigo-50 text-center text-sm text-indigo-700 border-b border-indigo-100">
+                                        All {paginatedItems.length} items on this page are selected.{' '}
+                                        <button onClick={selectAllPages} className="font-semibold underline hover:text-indigo-900">
+                                            Select all {filteredContent.length} items across all pages
+                                        </button>
+                                    </td>
+                                </tr>
+                            )}
+                            {!isLoading && selectedIds.size === filteredContent.length && filteredContent.length > paginatedItems.length && (
+                                <tr>
+                                    <td colSpan={visibleColumns.length + 1} className="px-6 py-2.5 bg-indigo-50 text-center text-sm text-indigo-700 border-b border-indigo-100">
+                                        All {filteredContent.length} items selected.{' '}
+                                        <button onClick={clearSelection} className="font-semibold underline hover:text-indigo-900">
+                                            Clear selection
+                                        </button>
+                                    </td>
+                                </tr>
+                            )}
                             {isLoading ? (
                                 <tr>
-                                    <td colSpan={visibleColumns.length + 1} className="px-6 py-12 text-center text-gray-500">
-                                        <div className="flex items-center justify-center gap-2">
-                                            <div className="w-4 h-4 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-                                            Loading content...
+                                    <td colSpan={visibleColumns.length + 1} className="px-6 py-16 text-center text-gray-500">
+                                        <div className="flex flex-col items-center gap-3">
+                                            <div className="w-8 h-8 border-3 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                                            <span className="text-sm">Loading content...</span>
                                         </div>
                                     </td>
                                 </tr>
-                            ) : filteredContent.length === 0 ? (
+                            ) : paginatedItems.length === 0 ? (
                                 <tr>
-                                    <td colSpan={visibleColumns.length + 1} className="px-6 py-12 text-center text-gray-500">
+                                    <td colSpan={visibleColumns.length + 1} className="px-6 py-16 text-center text-gray-500">
                                         <div className="text-center space-y-3">
-                                            <FileText size={32} className="text-gray-300 mx-auto" />
+                                            <FileText size={36} className="text-gray-300 mx-auto" />
                                             <div>
-                                                <p className="font-medium">
+                                                <p className="font-medium text-gray-600">
                                                     {contentFilter === 'wordpress' ? 'No WordPress posts' :
                                                      contentFilter === 'generated' ? 'No posts created in SEO OS' :
+                                                     statusTab === 'unoptimized' ? 'All pages are optimized!' :
+                                                     statusTab === 'pending-sync' ? 'No pages pending sync' :
                                                      'No content yet'}
                                                 </p>
-                                                <p className="text-xs mt-1">
+                                                <p className="text-xs text-gray-400 mt-1">
                                                     {contentFilter === 'wordpress'
                                                         ? 'Sync posts from WordPress in Settings'
                                                         : 'Create your first post or sync from WordPress'}
@@ -1350,421 +1806,311 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                     </td>
                                 </tr>
                             ) : (
-                                filteredContent.map(item => (
-                                    <tr key={item.id} className={`hover:bg-gray-50/50 transition-colors ${selectedIds.has(item.id) ? 'bg-indigo-50/50' : ''}`}>
-                                        <td className="px-6 py-4">
+                                paginatedItems.map(item => (
+                                    <tr key={item.id} className={`border-b border-gray-100 hover:bg-blue-50/30 transition-colors ${selectedIds.has(item.id) ? 'bg-indigo-50/40' : ''}`}>
+                                        <td className="px-6 py-5 align-top">
                                             <input
                                                 type="checkbox"
-                                                className="rounded-md border-gray-300"
+                                                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mt-1"
                                                 checked={selectedIds.has(item.id)}
                                                 onChange={() => toggleSelect(item.id)}
                                             />
                                         </td>
-                                        {visibleColumns.includes('title') && (
-                                            <td className="px-6 py-4">
-                                                <div
-                                                    className="cursor-pointer"
-                                                    onClick={() => {
-                                                        if (item.originalArticle) handleEditArticle(item.originalArticle);
-                                                        else if (item.originalPost) handleEditWPPost(item.originalPost);
-                                                    }}
-                                                >
-                                                    <div className="font-medium text-gray-900 hover:text-indigo-600 transition-colors">
-                                                        {item.title || 'Untitled'}
-                                                    </div>
-                                                </div>
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('source') && (
-                                            <td className="px-6 py-4">
-                                                {item.source === 'wordpress' ? (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-100">
-                                                        <Globe size={10} /> WP
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-purple-50 text-purple-700 border border-purple-100">
-                                                        <FileText size={10} /> Local
-                                                    </span>
-                                                )}
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('keyword') && (
-                                            <td className="px-6 py-4">
-                                                {item.keyword ? (
-                                                    <div className="flex items-center gap-1 text-xs text-gray-600">
-                                                        <Tag size={12} />
-                                                        {item.keyword}
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-xs text-gray-400">—</span>
-                                                )}
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('seo_score') && (
-                                            <td className="px-6 py-4">
-                                                {item.seo_score !== null || item.preliminary_seo_score ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <SEOScoreIndicator
-                                                            score={item.seo_score || item.preliminary_seo_score || 0}
-                                                            size="sm"
-                                                        />
-                                                        {item.seo_score && item.preliminary_seo_score && (
-                                                            <div className="text-xs text-gray-500 flex items-center gap-1">
-                                                                {item.seo_score > item.preliminary_seo_score ? (
-                                                                    <TrendingUp size={12} className="text-emerald-600" />
-                                                                ) : item.seo_score < item.preliminary_seo_score ? (
-                                                                    <TrendingDown size={12} className="text-rose-600" />
-                                                                ) : null}
-                                                                <span>{item.preliminary_seo_score} → {item.seo_score}</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-xs text-gray-400">—</span>
-                                                )}
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('readability') && (
-                                            <td className="px-6 py-4">
-                                                {item.readability_score != null ? (
-                                                    <div className="flex items-center gap-1.5">
-                                                        <div className={`w-2 h-2 rounded-full ${
-                                                            item.readability_score >= 80 ? 'bg-emerald-500' :
-                                                            item.readability_score >= 50 ? 'bg-amber-500' :
-                                                            'bg-rose-500'
-                                                        }`} />
-                                                        <span className={`text-xs font-bold ${
-                                                            item.readability_score >= 80 ? 'text-emerald-700' :
-                                                            item.readability_score >= 50 ? 'text-amber-700' :
-                                                            'text-rose-700'
-                                                        }`}>
-                                                            {item.readability_score}
-                                                        </span>
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-xs text-gray-400">—</span>
-                                                )}
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('word_count') && (
-                                            <td className="px-6 py-4 text-gray-500 text-xs">
-                                                {item.word_count ? `${item.word_count.toLocaleString()}` : '—'}
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('links') && (
-                                            <td className="px-6 py-4">
-                                                {(item.internal_links_count != null || item.external_links_count != null) ? (
-                                                    <div className="flex items-center gap-2 text-xs">
-                                                        <span className="flex items-center gap-0.5 text-blue-600" title="Internal links">
-                                                            <Link2 size={11} />
-                                                            {item.internal_links_count ?? 0}
-                                                        </span>
-                                                        <span className="text-gray-300">/</span>
-                                                        <span className="flex items-center gap-0.5 text-orange-600" title="External links">
-                                                            <ExternalLink size={11} />
-                                                            {item.external_links_count ?? 0}
-                                                        </span>
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-xs text-gray-400">—</span>
-                                                )}
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('images') && (
-                                            <td className="px-6 py-4">
-                                                {item.images_count != null ? (
-                                                    <div className="flex items-center gap-1 text-xs">
-                                                        <ImageIcon size={12} className="text-gray-400" />
-                                                        <span className="text-gray-700">{item.images_count}</span>
-                                                        {item.images_count > 0 && (
-                                                            <span className={`text-[10px] ${
-                                                                item.images_alt_count === item.images_count
-                                                                    ? 'text-emerald-600'
-                                                                    : 'text-amber-600'
-                                                            }`}>
-                                                                ({item.images_alt_count ?? 0} alt)
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-xs text-gray-400">—</span>
-                                                )}
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('seo_title') && (
-                                            <td className="px-6 py-4">
-                                                {item.seo_title ? (
-                                                    <div className="max-w-[200px]">
-                                                        <p className="text-xs text-gray-700 truncate" title={item.seo_title}>
-                                                            {item.seo_title}
-                                                        </p>
-                                                        <span className={`text-[10px] ${
-                                                            item.seo_title.length >= 50 && item.seo_title.length <= 60
-                                                                ? 'text-emerald-600'
-                                                                : item.seo_title.length > 60
-                                                                ? 'text-rose-600'
-                                                                : 'text-amber-600'
-                                                        }`}>
-                                                            {item.seo_title.length}/60
-                                                        </span>
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-xs text-gray-400">—</span>
-                                                )}
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('seo_description') && (
-                                            <td className="px-6 py-4">
-                                                {item.seo_description ? (
-                                                    <div className="max-w-[220px]">
-                                                        <p className="text-xs text-gray-700 truncate" title={item.seo_description}>
-                                                            {item.seo_description}
-                                                        </p>
-                                                        <span className={`text-[10px] ${
-                                                            item.seo_description.length >= 150 && item.seo_description.length <= 160
-                                                                ? 'text-emerald-600'
-                                                                : item.seo_description.length > 160
-                                                                ? 'text-rose-600'
-                                                                : 'text-amber-600'
-                                                        }`}>
-                                                            {item.seo_description.length}/160
-                                                        </span>
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-xs text-gray-400">—</span>
-                                                )}
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('robots') && (
-                                            <td className="px-6 py-4">
-                                                {item.robots_meta ? (
-                                                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                                        item.robots_meta.includes('noindex')
-                                                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                                    }`}>
-                                                        <Shield size={10} />
-                                                        {item.robots_meta.includes('noindex') ? 'noindex' : 'index'}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-xs text-gray-400">—</span>
-                                                )}
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('schema_type') && (
-                                            <td className="px-6 py-4">
-                                                {item.schema_article_type ? (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-100">
-                                                        <Hash size={10} />
-                                                        {item.schema_article_type}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-xs text-gray-400">—</span>
-                                                )}
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('canonical') && (
-                                            <td className="px-6 py-4">
-                                                {item.canonical_url ? (
-                                                    <a
-                                                        href={item.canonical_url}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="text-xs text-blue-600 hover:underline truncate max-w-[150px] block"
-                                                        title={item.canonical_url}
-                                                    >
-                                                        {new URL(item.canonical_url).pathname}
-                                                    </a>
-                                                ) : (
-                                                    <span className="text-xs text-gray-400">—</span>
-                                                )}
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('published_at') && (
-                                            <td className="px-6 py-4 text-xs text-gray-500">
-                                                {item.published_at ? (
-                                                    <span title={new Date(item.published_at).toLocaleString()}>
-                                                        {new Date(item.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-gray-400">—</span>
-                                                )}
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('status') && (
-                                            <td className="px-6 py-4">
-                                                <div className="relative w-fit">
-                                                    <span className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                                                        item.status === 'publish' || item.status === 'published' ? 'bg-emerald-50 text-emerald-700' :
-                                                        item.status === 'reviewed' ? 'bg-amber-50 text-amber-700' :
-                                                        item.status === 'pending' ? 'bg-amber-50 text-amber-700' :
-                                                        'bg-gray-100 text-gray-600'
-                                                    }`}>
-                                                        {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                                                    </span>
-                                                </div>
-                                            </td>
-                                        )}
-                                        {visibleColumns.includes('actions') && (
-                                            <td className="px-6 py-4">
-                                                {item.source === 'wordpress' && item.originalPost ? (
-                                                    // WordPress post actions: Edit, Update WP, View
-                                                    <div className="flex items-center gap-2">
-                                                        <button
-                                                            onClick={() => handleEditWPPost(item.originalPost)}
-                                                            className="p-1.5 hover:bg-indigo-50 rounded-lg text-indigo-600 transition-colors"
-                                                            title="Edit"
-                                                        >
-                                                            <Edit size={16} />
-                                                        </button>
-                                                        {item.wp_post_id && (
-                                                            <button
-                                                                onClick={() => {
-                                                                    if (!site?.wp_username || !site?.wp_app_password) {
-                                                                        toast.warning('Configure WordPress credentials first');
-                                                                        return;
-                                                                    }
-                                                                    // For WP posts, use the post as article to trigger the PublishModal
-                                                                    const postAsArticle: ArticleRecord = {
-                                                                        id: item.originalPost.id,
-                                                                        site_id: item.originalPost.site_id,
-                                                                        keyword: item.originalPost.focus_keyword || '',
-                                                                        title: item.originalPost.title,
-                                                                        seo_title: item.originalPost.seo_title,
-                                                                        seo_description: item.originalPost.seo_description,
-                                                                        content: item.originalPost.content,
-                                                                        word_count: item.originalPost.word_count,
-                                                                        status: item.originalPost.status,
-                                                                        wp_post_id: item.originalPost.wp_post_id,
-                                                                        created_at: item.originalPost.created_at,
-                                                                        published_at: item.originalPost.published_at,
-                                                                    };
-                                                                    setArticleToPublish(postAsArticle);
-                                                                    setEditingWPPostId(item.originalPost.id);
-                                                                    setIsPublishModalOpen(true);
-                                                                }}
-                                                                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-all flex items-center gap-1"
-                                                                title="Update in WordPress"
-                                                            >
-                                                                <RefreshCw size={12} /> Update WP
-                                                            </button>
-                                                        )}
-                                                        {item.url && (
-                                                            <a
-                                                                href={item.url}
-                                                                target="_blank"
-                                                                rel="noreferrer"
-                                                                className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-600 transition-colors"
-                                                                title="View on site"
-                                                            >
-                                                                <Globe size={16} />
-                                                            </a>
-                                                        )}
-                                                        {nanaBananaEnabled && item.wp_post_id && (
-                                                            <button
-                                                                onClick={() => handleGenerateCover(item.id)}
-                                                                disabled={generatingCoverId === item.id}
-                                                                className="p-1.5 hover:bg-yellow-50 rounded-lg text-yellow-600 transition-colors disabled:opacity-50"
-                                                                title="Generate Cover"
-                                                            >
-                                                                {generatingCoverId === item.id ? (
-                                                                    <Loader2 size={16} className="animate-spin" />
-                                                                ) : (
-                                                                    <Wand2 size={16} />
-                                                                )}
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                ) : item.originalArticle ? (
-                                                    // Generated article actions: Edit, Analyze, Publish
-                                                    item.status === 'published' && item.wp_post_id ? (
-                                                        <div className="flex items-center gap-2">
-                                                            <button
-                                                                onClick={() => handleEditArticle(item.originalArticle!)}
-                                                                className="p-1.5 hover:bg-indigo-50 rounded-lg text-indigo-600 transition-colors"
-                                                                title="Edit"
-                                                            >
-                                                                <Edit size={16} />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handlePublishArticle(item.originalArticle!)}
-                                                                disabled={publishArticle.isPending}
-                                                                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                                                                title="Update in WordPress"
-                                                            >
-                                                                <RefreshCw size={12} /> Update WP
-                                                            </button>
-                                                            {item.url && (
-                                                                <a
-                                                                    href={item.url}
-                                                                    target="_blank"
-                                                                    rel="noreferrer"
-                                                                    className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-600 transition-colors"
-                                                                    title="View on site"
-                                                                >
-                                                                    <Globe size={16} />
-                                                                </a>
+                                        {visibleColumns.map(colId => {
+                                            switch (colId) {
+                                                case 'status':
+                                                    return <td key={colId} className="px-6 py-5 align-top">{renderStatusIcon(item.status, item.source)}</td>;
+                                                case 'title':
+                                                    return <td key={colId} className="px-6 py-5 align-top">{renderUrlSite(item)}</td>;
+                                                case 'source':
+                                                    return (
+                                                        <td key={colId} className="px-6 py-5 align-top">
+                                                            {item.source === 'wordpress' ? (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-100"><Globe size={10} /> WP</span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-purple-50 text-purple-700 border border-purple-100"><FileText size={10} /> Local</span>
                                                             )}
-                                                            {nanaBananaEnabled && item.wp_post_id && (
-                                                                <button
-                                                                    onClick={() => handleGenerateCover(item.id)}
-                                                                    disabled={generatingCoverId === item.id}
-                                                                    className="p-1.5 hover:bg-yellow-50 rounded-lg text-yellow-600 transition-colors disabled:opacity-50"
-                                                                    title="Generate Cover"
-                                                                >
-                                                                    {generatingCoverId === item.id ? (
-                                                                        <Loader2 size={16} className="animate-spin" />
-                                                                    ) : (
-                                                                        <Wand2 size={16} />
+                                                        </td>
+                                                    );
+                                                case 'keyword':
+                                                    return <td key={colId} className="px-6 py-5 align-top">{item.keyword ? <span className="text-xs text-gray-600">{item.keyword}</span> : <span className="text-xs text-gray-300">—</span>}</td>;
+                                                case 'seo_score':
+                                                    return (
+                                                        <td key={colId} className="px-6 py-5 align-top">
+                                                            {item.seo_score !== null || item.preliminary_seo_score ? (
+                                                                <SEOScoreIndicator score={item.seo_score || item.preliminary_seo_score || 0} size="sm" />
+                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                        </td>
+                                                    );
+                                                case 'seo_title': {
+                                                    const titleLen = getSeoEditValue(item.id, 'seo_title', item.seo_title).length;
+                                                    return (
+                                                        <td key={colId} className="px-5 py-4 align-top">
+                                                            <div className="min-w-[320px]">
+                                                                <div className="flex items-start gap-1.5">
+                                                                    <textarea rows={2} value={getSeoEditValue(item.id, 'seo_title', item.seo_title)} onChange={e => updateSeoEdit(item.id, 'seo_title', e.target.value)} placeholder="Enter SEO title..." className="w-full border border-gray-100 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 rounded-lg text-sm text-gray-800 resize-none p-2.5 placeholder:text-gray-300 bg-white transition-all" />
+                                                                    {aiWriterEnabled && (
+                                                                        <AIGeneratePopover
+                                                                            type="title"
+                                                                            postId={item.id}
+                                                                            siteId={siteId}
+                                                                            keyword={item.keyword || undefined}
+                                                                            onApply={(value) => updateSeoEdit(item.id, 'seo_title', value)}
+                                                                        />
                                                                     )}
+                                                                </div>
+                                                                <div className="mt-1 text-left">
+                                                                    <span className={`text-xs font-medium ${titleLen === 0 ? 'text-gray-300' : titleLen > 60 ? 'text-rose-500' : titleLen >= 50 ? 'text-emerald-500' : 'text-gray-400'}`}>{titleLen} / 60</span>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                    );
+                                                }
+                                                case 'seo_description': {
+                                                    const descLen = getSeoEditValue(item.id, 'seo_description', item.seo_description).length;
+                                                    return (
+                                                        <td key={colId} className="px-5 py-4 align-top">
+                                                            <div className="min-w-[460px]">
+                                                                <div className="flex items-start gap-1.5">
+                                                                    <textarea rows={3} value={getSeoEditValue(item.id, 'seo_description', item.seo_description)} onChange={e => updateSeoEdit(item.id, 'seo_description', e.target.value)} placeholder="Enter meta description..." className="w-full border border-gray-100 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 rounded-lg text-sm text-gray-800 resize-none p-2.5 placeholder:text-gray-300 bg-white transition-all" />
+                                                                    {aiWriterEnabled && (
+                                                                        <AIGeneratePopover
+                                                                            type="description"
+                                                                            postId={item.id}
+                                                                            siteId={siteId}
+                                                                            keyword={item.keyword || undefined}
+                                                                            onApply={(value) => updateSeoEdit(item.id, 'seo_description', value)}
+                                                                        />
+                                                                    )}
+                                                                </div>
+                                                                <div className="mt-1 text-left">
+                                                                    <span className={`text-xs font-medium ${descLen === 0 ? 'text-gray-300' : descLen > 160 ? 'text-rose-500' : descLen >= 140 ? 'text-emerald-500' : 'text-gray-400'}`}>{descLen} / 160</span>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                    );
+                                                }
+                                                case 'readability':
+                                                    return (
+                                                        <td key={colId} className="px-6 py-5 align-top">
+                                                            {item.readability_score != null ? (
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <div className={`w-2 h-2 rounded-full ${item.readability_score >= 80 ? 'bg-emerald-500' : item.readability_score >= 50 ? 'bg-amber-500' : 'bg-rose-500'}`} />
+                                                                    <span className={`text-xs font-bold ${item.readability_score >= 80 ? 'text-emerald-700' : item.readability_score >= 50 ? 'text-amber-700' : 'text-rose-700'}`}>{item.readability_score}</span>
+                                                                </div>
+                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                        </td>
+                                                    );
+                                                case 'word_count':
+                                                    return <td key={colId} className="px-6 py-5 align-top text-xs text-gray-500">{item.word_count ? item.word_count.toLocaleString() : '—'}</td>;
+                                                case 'links':
+                                                    return (
+                                                        <td key={colId} className="px-6 py-5 align-top">
+                                                            {(item.internal_links_count != null || item.external_links_count != null) ? (
+                                                                <div className="flex items-center gap-2 text-xs">
+                                                                    <span className="text-blue-600" title="Internal"><Link2 size={11} className="inline" /> {item.internal_links_count ?? 0}</span>
+                                                                    <span className="text-gray-300">/</span>
+                                                                    <span className="text-orange-600" title="External"><ExternalLink size={11} className="inline" /> {item.external_links_count ?? 0}</span>
+                                                                </div>
+                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                        </td>
+                                                    );
+                                                case 'images':
+                                                    return (
+                                                        <td key={colId} className="px-6 py-5 align-top">
+                                                            {item.images_count != null ? (
+                                                                <div className="flex items-center gap-1 text-xs">
+                                                                    <ImageIcon size={12} className="text-gray-400" />
+                                                                    <span className="text-gray-700">{item.images_count}</span>
+                                                                    {item.images_count > 0 && <span className={`text-[10px] ${item.images_alt_count === item.images_count ? 'text-emerald-600' : 'text-amber-600'}`}>({item.images_alt_count ?? 0} alt)</span>}
+                                                                </div>
+                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                        </td>
+                                                    );
+                                                case 'robots':
+                                                    return (
+                                                        <td key={colId} className="px-6 py-5 align-top">
+                                                            {item.robots_meta ? (
+                                                                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${item.robots_meta.includes('noindex') ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}><Shield size={10} />{item.robots_meta.includes('noindex') ? 'noindex' : 'index'}</span>
+                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                        </td>
+                                                    );
+                                                case 'schema_type':
+                                                    return (
+                                                        <td key={colId} className="px-6 py-5 align-top">
+                                                            {item.schema_article_type ? (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-violet-50 text-violet-700"><Hash size={10} />{item.schema_article_type}</span>
+                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                        </td>
+                                                    );
+                                                case 'canonical':
+                                                    return (
+                                                        <td key={colId} className="px-6 py-5 align-top">
+                                                            {item.canonical_url ? (
+                                                                <a href={item.canonical_url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline truncate max-w-[150px] block" title={item.canonical_url}>
+                                                                    {(() => { try { return new URL(item.canonical_url).pathname; } catch { return item.canonical_url; } })()}
+                                                                </a>
+                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                        </td>
+                                                    );
+                                                case 'serp_preview':
+                                                    return (
+                                                        <td key={colId} className="px-5 py-4 align-top">
+                                                            <div className="min-w-[240px] max-w-[300px]">
+                                                                <div className="text-[15px] text-blue-700 font-medium truncate leading-snug">{getSeoEditValue(item.id, 'seo_title', item.seo_title) || item.title || 'Page Title'}</div>
+                                                                <div className="text-emerald-700 text-xs truncate mt-0.5">{item.url || `https://${(site?.url || 'example.com').replace(/^https?:\/\//, '')}/${(item.originalPost?.slug || '...')}`}</div>
+                                                                <div className="text-gray-500 text-xs line-clamp-2 mt-0.5 leading-relaxed">{getSeoEditValue(item.id, 'seo_description', item.seo_description) || 'No description set...'}</div>
+                                                            </div>
+                                                        </td>
+                                                    );
+                                                case 'og_title':
+                                                    return (
+                                                        <td key={colId} className="px-6 py-5 align-top">
+                                                            {item.og_title ? <p className="text-xs text-gray-700 truncate max-w-[180px]" title={item.og_title}>{item.og_title}</p> : <span className="text-xs text-gray-300">—</span>}
+                                                        </td>
+                                                    );
+                                                case 'cover':
+                                                    return (
+                                                        <td key={colId} className="px-5 py-5 align-top">
+                                                            {(item.originalArticle as any)?.cover_url ? (
+                                                                <img src={(item.originalArticle as any).cover_url} className="w-16 h-10 rounded object-cover" alt="" />
+                                                            ) : (item.originalPost as any)?.featured_image_url ? (
+                                                                <img src={(item.originalPost as any).featured_image_url} className="w-16 h-10 rounded object-cover" alt="" />
+                                                            ) : (
+                                                                <button onClick={() => item.wp_post_id ? handleGenerateCover(item.id) : null} disabled={!item.wp_post_id || generatingCoverId === item.id} className="w-16 h-10 rounded border border-dashed border-gray-200 flex items-center justify-center hover:border-yellow-400 hover:bg-yellow-50 transition-colors disabled:opacity-40" title={item.wp_post_id ? 'Generate cover' : 'Publish to WP first'}>
+                                                                    {generatingCoverId === item.id ? <Loader2 size={14} className="animate-spin text-gray-400" /> : <Palette size={14} className="text-yellow-500" />}
                                                                 </button>
                                                             )}
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-center gap-2">
-                                                            <button
-                                                                onClick={() => handleEditArticle(item.originalArticle!)}
-                                                                className="p-1.5 hover:bg-indigo-50 rounded-lg text-indigo-600 transition-colors"
-                                                                title="Edit"
-                                                            >
-                                                                <Edit size={16} />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleAnalyzeInline(item.originalArticle!)}
-                                                                disabled={analyzingArticleId === item.originalArticle!.id}
-                                                                className="p-1.5 hover:bg-sky-50 rounded-lg text-sky-600 transition-colors disabled:opacity-50"
-                                                                title="Analyze SEO"
-                                                            >
-                                                                {analyzingArticleId === item.originalArticle!.id ? (
-                                                                    <Loader2 size={16} className="animate-spin" />
+                                                        </td>
+                                                    );
+                                                case 'published_at':
+                                                    return (
+                                                        <td key={colId} className="px-6 py-5 align-top text-xs text-gray-500">
+                                                            {item.published_at ? new Date(item.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : <span className="text-gray-300">—</span>}
+                                                        </td>
+                                                    );
+                                                case 'actions':
+                                                    return (
+                                                        <td key={colId} className="px-6 py-5 align-top">
+                                                            {item.source === 'wordpress' && item.originalPost ? (
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <button onClick={() => handleEditWPPost(item.originalPost)} className="p-1.5 hover:bg-indigo-50 rounded-lg text-indigo-600 transition-colors" title="Edit"><Edit size={15} /></button>
+                                                                    {item.wp_post_id && (
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                if (!site?.wp_username || !site?.wp_app_password) { toast.warning('Configure WordPress credentials first'); return; }
+                                                                                const postAsArticle: ArticleRecord = { id: item.originalPost.id, site_id: item.originalPost.site_id, keyword: item.originalPost.focus_keyword || '', title: item.originalPost.title, seo_title: item.originalPost.seo_title, seo_description: item.originalPost.seo_description, content: item.originalPost.content, word_count: item.originalPost.word_count, status: item.originalPost.status, wp_post_id: item.originalPost.wp_post_id, created_at: item.originalPost.created_at, published_at: item.originalPost.published_at };
+                                                                                setArticleToPublish(postAsArticle); setEditingWPPostId(item.originalPost.id); setIsPublishModalOpen(true);
+                                                                            }}
+                                                                            className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-600 transition-colors" title="Update in WordPress"
+                                                                        ><RefreshCw size={15} /></button>
+                                                                    )}
+                                                                    {item.url && <a href={item.url} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors" title="View"><ExternalLink size={15} /></a>}
+                                                                </div>
+                                                            ) : item.originalArticle ? (
+                                                                item.status === 'published' && item.wp_post_id ? (
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <button onClick={() => handleEditArticle(item.originalArticle!)} className="p-1.5 hover:bg-indigo-50 rounded-lg text-indigo-600 transition-colors" title="Edit"><Edit size={15} /></button>
+                                                                        <button onClick={() => handlePublishArticle(item.originalArticle!)} disabled={publishArticle.isPending} className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-600 transition-colors disabled:opacity-50" title="Update"><RefreshCw size={15} /></button>
+                                                                        {item.url && <a href={item.url} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors" title="View"><ExternalLink size={15} /></a>}
+                                                                    </div>
                                                                 ) : (
-                                                                    <Eye size={16} />
-                                                                )}
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handlePublishArticle(item.originalArticle!)}
-                                                                disabled={publishArticle.isPending}
-                                                                className="px-4 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-bold hover:bg-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                                            >
-                                                                Publish
-                                                            </button>
-                                                        </div>
-                                                    )
-                                                ) : null}
-                                            </td>
-                                        )}
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <button onClick={() => handleEditArticle(item.originalArticle!)} className="p-1.5 hover:bg-indigo-50 rounded-lg text-indigo-600 transition-colors" title="Edit"><Edit size={15} /></button>
+                                                                        <button onClick={() => handleAnalyzeInline(item.originalArticle!)} disabled={analyzingArticleId === item.originalArticle!.id} className="p-1.5 hover:bg-sky-50 rounded-lg text-sky-600 transition-colors disabled:opacity-50" title="Analyze">
+                                                                            {analyzingArticleId === item.originalArticle!.id ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
+                                                                        </button>
+                                                                        <button onClick={() => handlePublishArticle(item.originalArticle!)} disabled={publishArticle.isPending} className="px-3 py-1 bg-purple-600 text-white rounded-lg text-xs font-bold hover:bg-purple-700 disabled:opacity-50">Send to WP</button>
+                                                                    </div>
+                                                                )
+                                                            ) : null}
+                                                        </td>
+                                                    );
+                                                default:
+                                                    return <td key={colId} className="px-6 py-5 align-top text-xs text-gray-300">—</td>;
+                                            }
+                                        })}
                                     </tr>
                                 ))
                             )}
                         </tbody>
                     </table>
                 </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                    <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-white">
+                        <div className="flex items-center gap-3">
+                            <p className="text-sm text-gray-500">
+                                Showing {startIdx + 1} to {endIdx} of {filteredContent.length} items
+                            </p>
+                            <select
+                                value={itemsPerPage}
+                                onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                                className="px-2 py-1 text-sm border border-gray-200 rounded-lg bg-white text-gray-600 focus:border-indigo-300 focus:ring-1 focus:ring-indigo-100 outline-none"
+                            >
+                                {PAGE_SIZE_OPTIONS.map(size => (
+                                    <option key={size} value={size}>{size} / page</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                Previous
+                            </button>
+                            {getPageNumbers().map(page => (
+                                <button
+                                    key={page}
+                                    onClick={() => setCurrentPage(page)}
+                                    className={`w-9 h-9 text-sm font-medium rounded-lg transition-colors ${
+                                        currentPage === page
+                                            ? 'bg-indigo-600 text-white shadow-sm'
+                                            : 'text-gray-600 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    {page}
+                                </button>
+                            ))}
+                            <button
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                                className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                )}
+
             </div>
         );
     };
 
     const renderSettings = () => (
         <div className="max-w-2xl">
+            {/* Platform Selector */}
+            <div className="bg-white border border-gray-200 rounded-[2rem] p-8 shadow-sm mb-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-1">Platform</h3>
+                <p className="text-sm text-gray-500 mb-4">Choose which CMS platform this site runs on.</p>
+                <div className="flex gap-3">
+                    <button className="flex items-center gap-2 px-4 py-2.5 bg-indigo-50 border-2 border-indigo-500 rounded-xl text-sm font-semibold text-indigo-700">
+                        <Globe size={16} /> WordPress
+                    </button>
+                    <button className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-sm font-medium text-gray-400 cursor-not-allowed opacity-60" disabled>
+                        <ShoppingBag size={16} /> Shopify
+                        <span className="text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded-full">Soon</span>
+                    </button>
+                    <button className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-sm font-medium text-gray-400 cursor-not-allowed opacity-60" disabled>
+                        <Layout size={16} /> Webflow
+                        <span className="text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded-full">Soon</span>
+                    </button>
+                </div>
+            </div>
+
             <div className="bg-white border border-gray-200 rounded-[2rem] p-8 shadow-sm mb-6">
                 <h3 className="text-lg font-bold text-gray-900 mb-1">WordPress Connection</h3>
                 <p className="text-sm text-gray-500 mb-6">Connect your WordPress site to enable auto-publishing and content syncing.</p>
@@ -2199,12 +2545,37 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {wpCategories.map(cat => (
-                            <div key={cat.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
-                                <div>
-                                    <span className="font-medium text-gray-900">{cat.name}</span>
-                                    <span className="text-xs text-gray-400 ml-2">/{cat.slug}</span>
-                                </div>
-                                <span className="text-xs font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-lg">{cat.count} posts</span>
+                            <div key={cat.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors group">
+                                {editingCatTag?.type === 'category' && editingCatTag.id === cat.id ? (
+                                    <div className="flex items-center gap-2 flex-1">
+                                        <input
+                                            type="text"
+                                            value={editingCatTag.name}
+                                            onChange={e => setEditingCatTag({ ...editingCatTag, name: e.target.value })}
+                                            onKeyDown={e => { if (e.key === 'Enter') handleUpdateCatTag('category', cat.id, editingCatTag.name); if (e.key === 'Escape') setEditingCatTag(null); }}
+                                            className="flex-1 px-2 py-1 border border-indigo-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20"
+                                            autoFocus
+                                        />
+                                        <button onClick={() => handleUpdateCatTag('category', cat.id, editingCatTag.name)} disabled={isSavingCatTag} className="p-1 text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                                            {isSavingCatTag ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                        </button>
+                                        <button onClick={() => setEditingCatTag(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded-lg"><X size={14} /></button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div>
+                                            <span className="font-medium text-gray-900">{cat.name}</span>
+                                            <span className="text-xs text-gray-400 ml-2">/{cat.slug}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-lg">{cat.count} posts</span>
+                                            <button onClick={() => setEditingCatTag({ type: 'category', id: cat.id, name: cat.name })} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Rename"><Edit size={14} /></button>
+                                            <button onClick={() => handleDeleteCatTag('category', cat.id, cat.name)} disabled={deletingCatTagId === cat.id} className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50" title="Delete">
+                                                {deletingCatTagId === cat.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -2269,11 +2640,32 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                 ) : (
                     <div className="flex flex-wrap gap-2">
                         {wpTags.map(tag => (
-                            <span key={tag.id} className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-sm">
-                                <Tag size={12} className="text-gray-400" />
-                                <span className="font-medium text-gray-900">{tag.name}</span>
-                                <span className="text-xs text-gray-400">({tag.count})</span>
-                            </span>
+                            editingCatTag?.type === 'tag' && editingCatTag.id === tag.id ? (
+                                <div key={tag.id} className="inline-flex items-center gap-1.5 px-2 py-1.5 border border-indigo-300 rounded-xl bg-indigo-50 text-sm">
+                                    <input
+                                        type="text"
+                                        value={editingCatTag.name}
+                                        onChange={e => setEditingCatTag({ ...editingCatTag, name: e.target.value })}
+                                        onKeyDown={e => { if (e.key === 'Enter') handleUpdateCatTag('tag', tag.id, editingCatTag.name); if (e.key === 'Escape') setEditingCatTag(null); }}
+                                        className="w-24 px-1.5 py-0.5 border border-indigo-200 rounded text-sm bg-white focus:ring-1 focus:ring-indigo-400"
+                                        autoFocus
+                                    />
+                                    <button onClick={() => handleUpdateCatTag('tag', tag.id, editingCatTag.name)} disabled={isSavingCatTag} className="p-0.5 text-indigo-600 hover:bg-indigo-100 rounded">
+                                        {isSavingCatTag ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                                    </button>
+                                    <button onClick={() => setEditingCatTag(null)} className="p-0.5 text-gray-400 hover:bg-gray-200 rounded"><X size={12} /></button>
+                                </div>
+                            ) : (
+                                <span key={tag.id} className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-sm group">
+                                    <Tag size={12} className="text-gray-400" />
+                                    <span className="font-medium text-gray-900">{tag.name}</span>
+                                    <span className="text-xs text-gray-400">({tag.count})</span>
+                                    <button onClick={() => setEditingCatTag({ type: 'tag', id: tag.id, name: tag.name })} className="p-0.5 text-gray-400 hover:text-indigo-600 rounded opacity-0 group-hover:opacity-100 transition-opacity ml-1" title="Rename"><Edit size={12} /></button>
+                                    <button onClick={() => handleDeleteCatTag('tag', tag.id, tag.name)} disabled={deletingCatTagId === tag.id} className="p-0.5 text-gray-400 hover:text-rose-600 rounded opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50" title="Delete">
+                                        {deletingCatTagId === tag.id ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
+                                    </button>
+                                </span>
+                            )
                         ))}
                     </div>
                 )}
@@ -2320,12 +2712,18 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
             {renderTabs()}
 
             {/* Content */}
-            <div className="animate-fade-in bg-white rounded-[2rem] p-6 border border-gray-100 shadow-sm">
-                {activeTab === 'content' && renderContent()}
-                {activeTab === 'categories' && renderCategoriesTab()}
-                {activeTab === 'tags' && renderTagsTab()}
-                {activeTab === 'settings' && renderSettings()}
-            </div>
+            {activeTab === 'content' && (
+                <div className="animate-fade-in">
+                    {renderContent()}
+                </div>
+            )}
+            {activeTab !== 'content' && (
+                <div className="animate-fade-in bg-white rounded-[2rem] p-6 border border-gray-100 shadow-sm">
+                    {activeTab === 'categories' && renderCategoriesTab()}
+                    {activeTab === 'tags' && renderTagsTab()}
+                    {activeTab === 'settings' && renderSettings()}
+                </div>
+            )}
 
             {/* Publish Modal */}
             {articleToPublish && (
