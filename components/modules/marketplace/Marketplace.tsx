@@ -4,10 +4,11 @@ import React, { useState, useMemo } from 'react';
 import {
   Globe, Sparkles, Search, BarChart3, Image as ImageIcon,
   Loader2, AlertCircle, ChevronLeft, Store, Settings, X, ShieldAlert,
-  BookOpen, Users, Bot, Database, Wand2, FileText
+  BookOpen, Users, Bot, Database, Wand2, FileText, Download, Timer, Rss, Send
 } from 'lucide-react';
 import { useCore } from '@/lib/contexts/CoreContext';
 import { useToggleModule } from '@/hooks/useModules';
+import { useModuleStats } from '@/hooks/useMarketplaceTemplates';
 import { useToast } from '@/lib/contexts/ToastContext';
 import type { ModuleId } from '@/lib/core/events';
 import type { ViewState } from '@/types';
@@ -156,6 +157,39 @@ const MODULE_CARDS: {
     requiredKeys: ['gemini'],
     status: 'ready',
   },
+  {
+    id: 'cron',
+    name: 'Cron Scheduler',
+    description: 'Schedule recurring tasks with cron expressions. Powers timed recipe triggers and automated pipelines.',
+    icon: <Timer size={24} />,
+    iconBg: 'bg-violet-50 text-violet-600',
+    gradient: 'from-violet-500 to-indigo-600',
+    requiredKeys: [],
+    status: 'ready',
+    viewState: 'cron',
+  },
+  {
+    id: 'content-engine',
+    name: 'Content Engine',
+    description: 'Automated content pipeline: RSS ingestion, scoring, fact extraction, AI article generation, and WordPress publishing.',
+    icon: <Rss size={24} />,
+    iconBg: 'bg-rose-50 text-rose-600',
+    gradient: 'from-rose-500 to-pink-600',
+    requiredKeys: ['gemini'],
+    status: 'ready',
+    viewState: 'content-engine',
+  },
+  {
+    id: 'telegraph',
+    name: 'Telegraph',
+    description: 'Publish articles to telegra.ph for instant indexation and fast content seeding.',
+    icon: <Send size={24} />,
+    iconBg: 'bg-sky-50 text-sky-600',
+    gradient: 'from-sky-400 to-blue-500',
+    requiredKeys: [],
+    status: 'ready',
+    viewState: 'telegraph',
+  },
 ];
 
 interface MarketplaceProps {
@@ -166,10 +200,16 @@ interface MarketplaceProps {
 export default function Marketplace({ onBack, onChangeView }: MarketplaceProps) {
   const { isModuleEnabled, apiKeys } = useCore();
   const toggleModule = useToggleModule();
+  const { data: moduleStats = {} } = useModuleStats();
   const toast = useToast();
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [disableTarget, setDisableTarget] = useState<{ id: string; name: string } | null>(null);
+
+  const formatInstalls = (count: number) => {
+    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
+    return String(count);
+  };
 
   const handleInstall = async (moduleId: string) => {
     setTogglingId(moduleId);
@@ -229,7 +269,7 @@ export default function Marketplace({ onBack, onChangeView }: MarketplaceProps) 
   return (
     <div className="h-full overflow-y-auto">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 py-5 bg-[#F5F6F8] border-b border-gray-200 sticky top-0 z-10">
+      <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 py-5 bg-[#F5F5F7] border-b border-gray-200 sticky top-0 z-10">
         <div className="flex items-center gap-3">
           {onBack && (
             <>
@@ -312,7 +352,16 @@ export default function Marketplace({ onBack, onChangeView }: MarketplaceProps) 
 
                 {/* Name + Description */}
                 <h3 className="text-base font-bold text-gray-900 mb-1">{mod.name}</h3>
-                <p className="text-sm text-gray-500 leading-relaxed mb-4 flex-1">{mod.description}</p>
+                <p className="text-sm text-gray-500 leading-relaxed mb-2 flex-1">{mod.description}</p>
+
+                {/* Install count */}
+                {moduleStats[mod.id] && moduleStats[mod.id].install_count > 0 && (
+                  <div className="flex items-center gap-1 text-xs text-gray-400 mb-4">
+                    <Download size={11} />
+                    <span>{formatInstalls(moduleStats[mod.id].install_count)} installs</span>
+                  </div>
+                )}
+                {(!moduleStats[mod.id] || moduleStats[mod.id].install_count === 0) && <div className="mb-2" />}
 
                 {/* Required Keys Warning */}
                 {mod.requiredKeys.length > 0 && !keysReady && !isComingSoon && (

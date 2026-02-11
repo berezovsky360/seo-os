@@ -24,6 +24,9 @@ import { KeywordMagicModule } from '@/lib/modules/keyword-magic'
 import { DocsModule } from '@/lib/modules/docs'
 import { AIWriterModule } from '@/lib/modules/ai-writer'
 import { CronModule } from '@/lib/modules/cron'
+import { ContentEngineModule } from '@/lib/modules/content-engine'
+import { TelegraphModule } from '@/lib/modules/telegraph'
+import { CompetitorAnalysisModule } from '@/lib/modules/competitor-analysis'
 
 export const MODULE_REGISTRY: Record<string, SEOModule> = {
   'rankmath-bridge': new RankMathBridgeModule(),
@@ -40,6 +43,9 @@ export const MODULE_REGISTRY: Record<string, SEOModule> = {
   'docs': new DocsModule(),
   'ai-writer': new AIWriterModule(),
   'cron': new CronModule(),
+  'content-engine': new ContentEngineModule(),
+  'telegraph': new TelegraphModule(),
+  'competitor-analysis': new CompetitorAnalysisModule(),
 }
 
 /**

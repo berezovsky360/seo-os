@@ -40,11 +40,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe()
   }, [])
 
+  // Keep session activity fresh
+  useEffect(() => {
+    if (!session?.user) return
+    fetch('/api/auth/sessions', { method: 'POST' }).catch(() => {})
+  }, [session?.user?.id])
+
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { error, data } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
+    // Log login event (non-blocking)
+    if (data?.user) {
+      fetch('/api/auth/log-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: data.user.id, status: 'success' }),
+      }).catch(() => {})
+    } else if (error) {
+      // Try to log failed attempt — we don't have userId so skip
+    }
     return { error }
   }
 

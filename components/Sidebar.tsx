@@ -1,15 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ViewState, UserRole } from '../types';
+import { useAuth } from '@/lib/contexts/AuthContext';
 import {
-  LayoutDashboard, Calendar, Database, List, Layers, FileText,
-  CheckSquare, BarChart2, Settings, Bell, Search,
-  Briefcase, Home, PieChart, MessageSquare, Box,
-  Zap, Key, Activity, BookOpen, Store,
-  PanelLeftClose, PanelLeftOpen
-} from 'lucide-react';
-import { useCore } from '@/lib/contexts/CoreContext';
+  House, CalendarBlank, Lightning, Storefront, GearSix,
+  SignOut, Check, Plus, GearFine,
+} from '@phosphor-icons/react';
 
 interface SidebarProps {
   currentView: ViewState;
@@ -18,207 +16,245 @@ interface SidebarProps {
   setUserRole: (role: UserRole) => void;
   isOpen: boolean;
   onClose: () => void;
-  isCollapsed: boolean;
-  onToggleCollapse: () => void;
 }
 
-// Color mapping for dynamic module sections
-const SECTION_COLOR_MAP: Record<string, { dot: string; text: string }> = {
-  'bg-blue-500': { dot: 'bg-blue-500', text: 'text-blue-600' },
-  'bg-orange-500': { dot: 'bg-orange-500', text: 'text-orange-600' },
-  'bg-emerald-500': { dot: 'bg-emerald-500', text: 'text-emerald-600' },
-  'bg-purple-500': { dot: 'bg-purple-500', text: 'text-purple-600' },
-  'bg-yellow-500': { dot: 'bg-yellow-500', text: 'text-yellow-600' },
-  'bg-cyan-500': { dot: 'bg-cyan-500', text: 'text-cyan-600' },
-  'bg-slate-500': { dot: 'bg-slate-500', text: 'text-slate-600' },
-  'bg-violet-500': { dot: 'bg-violet-500', text: 'text-violet-600' },
-  'bg-gray-500': { dot: 'bg-gray-500', text: 'text-gray-600' },
+// ─── Tooltip (portalled, fixed position) ───
+const Tooltip = ({ label, anchor }: { label: string; anchor: DOMRect | null }) => {
+  if (!anchor || typeof window === 'undefined') return null;
+  return createPortal(
+    <div
+      className="fixed z-[9999] px-3 py-2 bg-white text-gray-900 text-xs font-semibold rounded-xl whitespace-nowrap shadow-xl border border-gray-100 pointer-events-none"
+      style={{
+        top: anchor.top + anchor.height / 2,
+        left: anchor.right + 14,
+        transform: 'translateY(-50%)',
+      }}
+    >
+      {label}
+    </div>,
+    document.body,
+  );
 };
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, setUserRole, isOpen, onClose, isCollapsed, onToggleCollapse }) => {
-  const { getModuleSidebarSections } = useCore();
-  const moduleSections = getModuleSidebarSections();
+// ─── NavIcon ───
+const NavIcon = ({
+  icon: Icon,
+  label,
+  active = false,
+  onClick,
+}: {
+  icon: React.ElementType;
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+}) => {
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const ref = useRef<HTMLButtonElement>(null);
+
+  const show = useCallback(() => {
+    if (ref.current) setAnchor(ref.current.getBoundingClientRect());
+  }, []);
+  const hide = useCallback(() => setAnchor(null), []);
+
+  return (
+    <>
+      <button
+        ref={ref}
+        onClick={onClick}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        className={`w-12 h-12 flex items-center justify-center rounded-2xl mb-1 cursor-pointer transition-all duration-200 ${
+          active
+            ? 'bg-indigo-50 text-indigo-600'
+            : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
+        }`}
+      >
+        <Icon size={24} weight="fill" />
+      </button>
+      <Tooltip label={label} anchor={anchor} />
+    </>
+  );
+};
+
+// ─── Core nav items (static, always visible) ───
+const CORE_NAV: { id: string; icon: React.ElementType; label: string; viewState: ViewState }[] = [
+  { id: 'home', icon: House, label: 'Home', viewState: 'dashboard' },
+  { id: 'calendar', icon: CalendarBlank, label: 'Calendar', viewState: 'calendar' },
+  { id: 'recipes', icon: Lightning, label: 'Automations', viewState: 'recipes' },
+];
+
+const BOTTOM_NAV: { id: string; icon: React.ElementType; label: string; viewState: ViewState }[] = [
+  { id: 'marketplace', icon: Storefront, label: 'Marketplace', viewState: 'marketplace' },
+  { id: 'settings', icon: GearSix, label: 'Settings', viewState: 'brands' },
+];
+
+// ─── Workspace Panel (portalled overlay) ───
+const WorkspacePanel = ({
+  isOpen,
+  onClose,
+  onNavigate,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onNavigate: (view: ViewState) => void;
+}) => {
+  const { signOut } = useAuth();
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[60]">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/25 backdrop-blur-[2px] animate-[fadeIn_200ms_ease-out]"
+        onClick={onClose}
+      />
+
+      {/* Panel */}
+      <div
+        ref={panelRef}
+        className="absolute top-3 left-[84px] w-72 bg-white rounded-2xl shadow-2xl border border-gray-200/60 overflow-hidden animate-[slideIn_250ms_ease-out]"
+        style={{ maxHeight: 'calc(100vh - 24px)' }}
+      >
+        {/* Header */}
+        <div className="px-4 pt-5 pb-3 flex items-center justify-between">
+          <h2 className="text-sm font-bold text-gray-900 tracking-tight">Workspaces</h2>
+          <button
+            className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-100 transition-colors"
+            title="New Workspace"
+          >
+            <Plus size={14} weight="bold" />
+          </button>
+        </div>
+
+        {/* Workspace list */}
+        <div className="px-2 pb-2">
+          <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-indigo-50/70">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">
+              D
+            </div>
+            <span className="flex-1 text-sm font-semibold text-gray-900 truncate">default</span>
+            <button
+              onClick={() => { onNavigate('brands' as ViewState); onClose(); }}
+              className="w-6 h-6 rounded-md text-gray-400 hover:text-gray-700 hover:bg-white flex items-center justify-center transition-colors"
+              title="Settings"
+            >
+              <GearFine size={14} />
+            </button>
+            <Check size={16} weight="bold" className="text-indigo-600 flex-shrink-0" />
+          </div>
+        </div>
+
+        {/* Divider + Actions */}
+        <div className="border-t border-gray-100 px-2 py-2">
+          <button
+            onClick={() => { onNavigate('brands' as ViewState); onClose(); }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors text-left text-sm font-medium"
+          >
+            <GearSix size={16} />
+            Account Settings
+          </button>
+          <button
+            onClick={async () => { onClose(); await signOut(); }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors text-left text-sm font-medium"
+          >
+            <SignOut size={16} />
+            Log out
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+};
+
+// ─── Sidebar ───
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, isOpen, onClose }) => {
+  const [wsOpen, setWsOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const handleNavClick = (view: ViewState) => {
     onChangeView(view);
     onClose();
   };
 
-  const navItemClass = (view: ViewState) =>
-    `flex items-center space-x-3 px-4 py-2.5 text-sm font-medium transition-all rounded-xl cursor-pointer mb-1 ${
-      currentView === view
-        ? 'bg-[#F3F4F6] text-gray-900 font-semibold'
-        : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-    }`;
-
-  // Icon Rail Item
-  const RailItem = ({ icon: Icon, active = false, onClick }: { icon: any, active?: boolean, onClick?: () => void }) => (
-    <div
-      onClick={onClick}
-      className={`w-10 h-10 flex items-center justify-center rounded-xl mb-4 cursor-pointer transition-all ${active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
-    >
-        <Icon size={20} />
-    </div>
-  );
-
-  // Core views for the icon rail "active" check
-  const coreViews = ['marketplace', 'key-management', 'event-log', 'recipes', 'settings', 'docs'] as const;
-  const moduleViews = ['rank-pulse', 'gemini-architect', 'rankmath-bridge', 'gsc-insights', 'bulk-metadata', 'nana-banana', 'keywords-db', 'keywords-main', 'llm-tracker', 'authors'] as const;
-
   return (
     <>
       {/* Mobile Backdrop */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/20 z-30 md:hidden backdrop-blur-sm transition-opacity"
+          className="fixed inset-0 bg-black/20 z-30 md:hidden backdrop-blur-sm"
           onClick={onClose}
         />
       )}
 
-      {/* Sidebar Container - Double Pane */}
+      {/* Icon Rail */}
       <div className={`
-        fixed inset-y-0 left-0 z-40 flex h-full
-        transition-transform duration-300 ease-in-out
+        fixed inset-y-0 left-0 z-40 w-[72px] bg-white flex flex-col items-center py-5 h-full
         md:relative md:translate-x-0 md:z-20
-        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+        ${mounted ? 'transition-transform duration-300 ease-in-out' : ''}
+        ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
 
-        {/* Pane 1: Dark Icon Rail */}
-        <div className="w-[72px] bg-[#1a1b23] flex flex-col items-center py-6 h-full z-20">
-            {/* Logo Placeholder */}
-            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl mb-8 flex items-center justify-center text-white font-bold text-lg shadow-lg">
-                R
-            </div>
-
-            <div className="flex-1 flex flex-col w-full items-center">
-                <RailItem icon={Home} active={currentView === 'dashboard' || currentView === 'calendar'} />
-                <RailItem icon={PieChart} />
-                <RailItem icon={Database} active={['keywords-main', 'keywords-db', 'serp'].includes(currentView)} />
-                <RailItem icon={FileText} active={['production', 'finished', 'clusters'].includes(currentView)} />
-                <RailItem icon={Zap} active={(moduleViews as readonly string[]).includes(currentView)} />
-                <RailItem icon={Box} active={(coreViews as readonly string[]).includes(currentView)} />
-            </div>
-
-            <div className="mt-auto flex flex-col items-center pb-4">
-                {isCollapsed && (
-                    <RailItem icon={PanelLeftOpen} onClick={onToggleCollapse} />
-                )}
-                <RailItem icon={Settings} />
-                <div className="w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 text-xs font-bold mt-2">
-                    JD
-                </div>
-            </div>
+        {/* Avatar → Workspaces */}
+        <div className="mb-6 flex-shrink-0">
+          <button
+            onClick={() => setWsOpen(true)}
+            className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-md hover:shadow-lg hover:scale-105 transition-all"
+          >
+            JD
+          </button>
         </div>
 
-        {/* Pane 2: Light Navigation Menu */}
-        <div className={`bg-white border-r border-gray-100 flex flex-col h-full z-10 transition-all duration-300 overflow-hidden ${isCollapsed ? 'w-0 md:w-0' : 'w-64'}`}>
-             {/* Header */}
-            <div className="h-20 flex items-center px-6 border-b border-gray-50 justify-between min-w-[256px]">
-                <div className="flex items-center gap-2 text-gray-900 font-bold text-lg tracking-tight">
-                    <BarChart2 className="text-gray-900" size={20} />
-                    <span>RankPilot</span>
-                </div>
-                <button
-                    onClick={onToggleCollapse}
-                    className="hidden md:flex p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
-                    title="Collapse sidebar"
-                >
-                    <PanelLeftClose size={18} />
-                </button>
-            </div>
+        {/* Core Nav */}
+        <div className="flex flex-col items-center w-full px-3">
+          {CORE_NAV.map(item => (
+            <NavIcon
+              key={item.id}
+              icon={item.icon}
+              label={item.label}
+              active={currentView === item.viewState}
+              onClick={() => handleNavClick(item.viewState)}
+            />
+          ))}
+        </div>
 
-            {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto px-4 py-6 custom-scrollbar">
+        {/* Spacer */}
+        <div className="flex-1" />
 
-                {/* Dashboard Section */}
-                <div className="mb-8">
-                    <div className="px-4 mb-2 flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
-                        <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Dashboard</span>
-                    </div>
-                     <div onClick={() => handleNavClick('dashboard')} className={navItemClass('dashboard')}>
-                        <span>Overview</span>
-                     </div>
-                     <div onClick={() => handleNavClick('calendar')} className={navItemClass('calendar')}>
-                        <span>Calendar</span>
-                     </div>
-                </div>
-
-                {/* Dynamic Module Sections */}
-                {moduleSections.map((section) => {
-                    const colors = SECTION_COLOR_MAP[section.color] || { dot: 'bg-gray-500', text: 'text-gray-600' };
-                    return (
-                        <div key={section.title} className="mb-8">
-                            <div className="px-4 mb-2 flex items-center gap-2">
-                                <div className={`w-1.5 h-1.5 rounded-full ${colors.dot}`}></div>
-                                <span className={`text-xs font-bold ${colors.text} uppercase tracking-wider`}>{section.title}</span>
-                            </div>
-                            {section.items.map((item) => (
-                                <div
-                                    key={item.viewState}
-                                    onClick={() => handleNavClick(item.viewState as ViewState)}
-                                    className={navItemClass(item.viewState as ViewState)}
-                                >
-                                    <span>{item.label}</span>
-                                </div>
-                            ))}
-                        </div>
-                    );
-                })}
-
-                {/* Core System Section */}
-                <div className="mb-8">
-                    <div className="px-4 mb-2 flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-violet-500"></div>
-                        <span className="text-xs font-bold text-violet-600 uppercase tracking-wider">System</span>
-                    </div>
-                    <div onClick={() => handleNavClick('event-log')} className={navItemClass('event-log')}>
-                        <span>Event Log</span>
-                    </div>
-                    <div onClick={() => handleNavClick('marketplace')} className={navItemClass('marketplace')}>
-                        <span>Marketplace</span>
-                    </div>
-                    <div onClick={() => handleNavClick('key-management')} className={navItemClass('key-management')}>
-                        <span>API Keys</span>
-                    </div>
-                    <div onClick={() => handleNavClick('docs')} className={navItemClass('docs')}>
-                        <span>Documentation</span>
-                    </div>
-                </div>
-
-                {/* Admin Section */}
-                <div className="mb-8">
-                    <div className="px-4 mb-2 flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-gray-400"></div>
-                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Admin</span>
-                    </div>
-                     <div onClick={() => handleNavClick('brands')} className={navItemClass('brands')}>
-                        <span>Settings</span>
-                     </div>
-                </div>
-
-            </div>
-
-             {/* Footer */}
-            <div className="p-4 border-t border-gray-100">
-                <div className="bg-[#F8F9FC] rounded-xl p-4">
-                     <div className="flex items-center gap-3 mb-3">
-                         <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                             <Briefcase size={16} />
-                         </div>
-                         <div>
-                             <div className="text-xs font-bold text-gray-900">Pro Plan</div>
-                             <div className="text-[10px] text-gray-500">Expires in 12 days</div>
-                         </div>
-                     </div>
-                     <button className="w-full py-2 bg-gray-900 hover:bg-black text-white text-xs font-bold rounded-lg transition-colors">
-                         Upgrade Now
-                     </button>
-                </div>
-            </div>
-
+        {/* Bottom Nav */}
+        <div className="flex flex-col items-center px-3">
+          <div className="w-6 h-px bg-gray-100 mb-2" />
+          {BOTTOM_NAV.map(item => (
+            <NavIcon
+              key={item.id}
+              icon={item.icon}
+              label={item.label}
+              active={currentView === item.viewState}
+              onClick={() => handleNavClick(item.viewState)}
+            />
+          ))}
         </div>
       </div>
+
+      {/* Workspace Panel */}
+      {mounted && (
+        <WorkspacePanel
+          isOpen={wsOpen}
+          onClose={() => setWsOpen(false)}
+          onNavigate={handleNavClick}
+        />
+      )}
     </>
   );
 };

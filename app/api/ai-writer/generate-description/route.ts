@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await request.json()
-    const { post_id, site_id, persona_id, keyword } = body
+    const { post_id, site_id, persona_id, keyword, tone } = body
     if (!post_id || !site_id) {
       return NextResponse.json({ error: 'Missing post_id or site_id' }, { status: 400 })
     }
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     }
 
     const module = new AIWriterModule()
-    const result = await module.executeAction('generate_description', { post_id, site_id, persona_id, keyword }, context)
+    const result = await module.executeAction('generate_description', { post_id, site_id, persona_id, keyword, tone }, context)
 
     return NextResponse.json(result)
   } catch (error) {

@@ -36,6 +36,9 @@ import {
   Columns2,
   Columns3,
   Columns4,
+  Sparkles,
+  Check,
+  Minus,
 } from 'lucide-react'
 import SEOMetaEditor from './SEOMetaEditor'
 
@@ -115,6 +118,7 @@ interface ArticleEditorProps {
   onAnalyze: () => Promise<any>
   isWPPost?: boolean // true if editing a WP post (uses post_id for versions)
   isNanaBananaEnabled?: boolean
+  isPage?: boolean // true when rendered as full page route instead of modal
 }
 
 // Normalize HTML into proper block elements (each line = separate <p>)
@@ -187,6 +191,7 @@ export default function ArticleEditor({
   onAnalyze,
   isWPPost = false,
   isNanaBananaEnabled = false,
+  isPage = false,
 }: ArticleEditorProps) {
   const [article, setArticle] = useState<Article>(initialArticle)
   const [activeTab, setActiveTab] = useState<'seo' | 'schema' | 'advanced' | 'history'>('seo')
@@ -218,6 +223,11 @@ export default function ArticleEditor({
   const [floatingToolbar, setFloatingToolbar] = useState<{ x: number; y: number; show: boolean }>({ x: 0, y: 0, show: false })
   const floatingToolbarRef = useRef<HTMLDivElement>(null)
   const [showFloatingTurnInto, setShowFloatingTurnInto] = useState(false)
+
+  // AI rewrite toolbar state
+  const [showAIMenu, setShowAIMenu] = useState(false)
+  const [aiRewriting, setAiRewriting] = useState(false)
+  const [showToneSubmenu, setShowToneSubmenu] = useState(false)
 
   // Block drag-and-drop state
   const [hoveredBlock, setHoveredBlock] = useState<HTMLElement | null>(null)
@@ -290,9 +300,13 @@ export default function ArticleEditor({
     return () => document.removeEventListener('selectionchange', handleSelectionChange)
   }, [editorMode])
 
-  // Close Turn Into dropdown when floating toolbar hides
+  // Close dropdowns when floating toolbar hides
   useEffect(() => {
-    if (!floatingToolbar.show) setShowFloatingTurnInto(false)
+    if (!floatingToolbar.show) {
+      setShowFloatingTurnInto(false)
+      setShowAIMenu(false)
+      setShowToneSubmenu(false)
+    }
   }, [floatingToolbar.show])
 
   // Upload image to WP media library, returns URL
@@ -891,6 +905,51 @@ export default function ArticleEditor({
     updateField('content', content.substring(0, start) + formattedText + content.substring(end))
   }
 
+  // AI rewrite handler — replaces selected text with AI-generated result
+  const handleAIRewrite = async (action: string, tone?: string) => {
+    setShowAIMenu(false)
+    setShowToneSubmenu(false)
+
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || !editorRef.current) return
+
+    const selectedText = sel.toString()
+    if (!selectedText.trim()) return
+
+    // Save range for later replacement
+    savedRangeRef.current = sel.getRangeAt(0).cloneRange()
+    setAiRewriting(true)
+
+    try {
+      const res = await fetch('/api/ai-writer/rewrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: selectedText, action, tone }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Rewrite failed')
+      }
+      const { result } = await res.json()
+
+      // Restore selection and replace text
+      editorRef.current?.focus()
+      const s = window.getSelection()
+      if (s && savedRangeRef.current) {
+        s.removeAllRanges()
+        s.addRange(savedRangeRef.current)
+      }
+      isFormattingRef.current = true
+      document.execCommand('insertText', false, result)
+      setHasUnsavedChanges(true)
+      requestAnimationFrame(() => { isFormattingRef.current = false })
+    } catch (err) {
+      console.error('AI rewrite failed:', err)
+    } finally {
+      setAiRewriting(false)
+    }
+  }
+
   // Fetch version history
   const fetchVersions = useCallback(async () => {
     setIsLoadingVersions(true)
@@ -1044,8 +1103,8 @@ export default function ArticleEditor({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-0 md:p-4">
-      <div className="bg-white md:rounded-2xl shadow-2xl w-full h-full max-w-[1800px] max-h-full md:max-h-[95vh] flex flex-col">
+    <div className={isPage ? "h-screen w-full" : "fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-0 md:p-4"}>
+      <div className={isPage ? "bg-white w-full h-full flex flex-col" : "bg-white md:rounded-2xl shadow-2xl w-full h-full max-w-[1800px] max-h-full md:max-h-[95vh] flex flex-col"}>
         {/* Header */}
         <div className="flex items-center justify-between px-3 md:px-6 py-3 md:py-4 border-b border-gray-200">
           <div className="flex items-center gap-2 md:gap-4 min-w-0">
@@ -2206,6 +2265,101 @@ export default function ArticleEditor({
               >
                 <Code size={15} />
               </button>
+
+              <div className="w-px h-5 bg-white/20 mx-0.5" />
+
+              {/* AI Rewrite button */}
+              <div className="relative">
+                <button
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setShowAIMenu(prev => !prev)
+                    setShowToneSubmenu(false)
+                  }}
+                  className={`p-1.5 rounded-lg transition-colors ${showAIMenu ? 'bg-purple-500/30' : 'hover:bg-white/10'}`}
+                  title="AI Tools"
+                >
+                  {aiRewriting ? (
+                    <Loader2 size={15} className="animate-spin text-purple-400" />
+                  ) : (
+                    <Sparkles size={15} className="text-purple-400" />
+                  )}
+                </button>
+
+                {/* AI dropdown menu */}
+                {showAIMenu && !aiRewriting && (
+                  <div
+                    className="absolute bottom-full right-0 mb-2 bg-[#1a1b23] border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[200px] z-[60]"
+                    onMouseDown={(e) => e.preventDefault()}
+                  >
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); handleAIRewrite('improve') }}
+                      className="w-full text-left px-3 py-2 hover:bg-white/10 text-white/90 text-sm transition-colors flex items-center gap-2"
+                    >
+                      <Wand2 size={14} className="text-purple-400" /> Improve Writing
+                    </button>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); handleAIRewrite('simplify') }}
+                      className="w-full text-left px-3 py-2 hover:bg-white/10 text-white/90 text-sm transition-colors flex items-center gap-2"
+                    >
+                      <Type size={14} className="text-blue-400" /> Simplify Language
+                    </button>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); handleAIRewrite('proofread') }}
+                      className="w-full text-left px-3 py-2 hover:bg-white/10 text-white/90 text-sm transition-colors flex items-center gap-2"
+                    >
+                      <Check size={14} className="text-emerald-400" /> Proofread
+                    </button>
+
+                    <div className="h-px bg-white/10 my-1 mx-2" />
+
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); handleAIRewrite('make_longer') }}
+                      className="w-full text-left px-3 py-2 hover:bg-white/10 text-white/90 text-sm transition-colors flex items-center gap-2"
+                    >
+                      <Plus size={14} className="text-amber-400" /> Make Longer
+                    </button>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); handleAIRewrite('make_shorter') }}
+                      className="w-full text-left px-3 py-2 hover:bg-white/10 text-white/90 text-sm transition-colors flex items-center gap-2"
+                    >
+                      <Minus size={14} className="text-amber-400" /> Make Shorter
+                    </button>
+
+                    <div className="h-px bg-white/10 my-1 mx-2" />
+
+                    {/* Change Tone with submenu */}
+                    <div className="relative">
+                      <button
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          setShowToneSubmenu(prev => !prev)
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-white/10 text-white/90 text-sm transition-colors flex items-center justify-between"
+                      >
+                        <span className="flex items-center gap-2">
+                          <RefreshCw size={14} className="text-indigo-400" /> Change Tone
+                        </span>
+                        <ChevronDown size={12} className={`transition-transform ${showToneSubmenu ? 'rotate-180' : ''}`} />
+                      </button>
+                      {showToneSubmenu && (
+                        <div className="px-2 pb-1">
+                          {['Professional', 'Casual', 'Straightforward', 'Confident', 'Friendly'].map(t => (
+                            <button
+                              key={t}
+                              onMouseDown={(e) => { e.preventDefault(); handleAIRewrite('change_tone', t.toLowerCase()) }}
+                              className="w-full text-left px-3 py-1.5 hover:bg-white/10 text-white/70 text-xs transition-colors rounded"
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             {/* Arrow pointing down */}
             <div

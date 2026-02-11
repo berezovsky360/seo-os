@@ -13,6 +13,7 @@ import type {
   TriggerNodeData,
   ConditionNodeData,
   ActionNodeData,
+  SubRecipeNodeData,
 } from './flow-types'
 
 const NODE_SPACING_Y = 150
@@ -78,9 +79,37 @@ export function recipeToGraph(recipe: Recipe): RecipeGraphLayout {
     y += NODE_SPACING_Y
   }
 
-  // 3. Create Action nodes
+  // 3. Create Action / SubRecipe nodes
   for (let i = 0; i < (recipe.actions || []).length; i++) {
     const action = recipe.actions[i]
+
+    // Detect sub-recipe actions and create SubRecipeNode instead of ActionNode
+    if (action.module === 'recipes' && action.action === 'execute_recipe') {
+      const subId = `sub_recipe-${i}`
+      nodes.push({
+        id: subId,
+        type: 'sub_recipe',
+        position: { x: NODE_START_X, y },
+        data: {
+          type: 'sub_recipe',
+          recipe_id: action.params?.recipe_id || '',
+          recipe_name: action.params?.recipe_name || '',
+          input_mapping: action.params?.input_mapping || {},
+          label: action.params?.recipe_name ? `sub:${action.params.recipe_name}` : 'Sub-Recipe',
+        },
+      })
+
+      edges.push({
+        id: `e-${lastNodeId}-${subId}`,
+        source: lastNodeId,
+        target: subId,
+      })
+
+      lastNodeId = subId
+      y += NODE_SPACING_Y
+      continue
+    }
+
     const actionId = `action-${i}`
 
     nodes.push({
@@ -169,6 +198,21 @@ export function graphToRecipe(
             module: data.module as RecipeAction['module'],
             action: data.action,
             params: data.params || {},
+          })
+        }
+      }
+
+      if (node.type === 'sub_recipe') {
+        const data = node.data as SubRecipeNodeData
+        if (data.recipe_id) {
+          actions.push({
+            module: 'recipes' as RecipeAction['module'],
+            action: 'execute_recipe',
+            params: {
+              recipe_id: data.recipe_id,
+              recipe_name: data.recipe_name,
+              input_mapping: data.input_mapping || {},
+            },
           })
         }
       }

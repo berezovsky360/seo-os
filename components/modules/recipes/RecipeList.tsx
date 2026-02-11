@@ -3,48 +3,17 @@
 import React, { useState } from 'react';
 import {
   BookOpen, Plus, ChevronLeft, Zap, ArrowRight, Trash2,
-  ToggleLeft, ToggleRight, Loader2, Clock, Hash, ChevronDown
+  ToggleLeft, ToggleRight, Loader2, Clock, Hash,
+  Store, Share2, FileJson
 } from 'lucide-react';
 import { useRecipes, useCreateRecipe, useUpdateRecipe, useDeleteRecipe } from '@/hooks/useRecipes';
 import { useToast } from '@/lib/contexts/ToastContext';
 import RecipeEditor from './RecipeEditor';
 import RecipeFlowEditor from './RecipeFlowEditor';
+import RecipeMarketplace from './RecipeMarketplace';
+import ShareRecipeModal from './ShareRecipeModal';
+import ImportRecipeModal from './ImportRecipeModal';
 import type { Recipe } from '@/lib/core/events';
-
-// Pre-built recipe templates
-const RECIPE_TEMPLATES = [
-  {
-    name: 'Low CTR Rescue',
-    description: 'When a page is in TOP-3 but CTR < 2%, analyze title and generate alternatives.',
-    trigger_event: 'gsc.low_ctr_found',
-    trigger_conditions: { max_ctr: 2, max_position: 3 },
-    actions: [
-      { module: 'gemini-architect', action: 'analyze_title', params: {} },
-      { module: 'gemini-architect', action: 'generate_titles', params: { count: 3 } },
-      { module: 'rankmath-bridge', action: 'create_draft', params: { status: 'draft' } },
-    ],
-  },
-  {
-    name: 'Smart Position Rescue',
-    description: 'When position drops by 5+, run content analysis and find semantic gaps.',
-    trigger_event: 'rank.position_dropped',
-    trigger_conditions: { min_drop: 5 },
-    actions: [
-      { module: 'gsc-insights', action: 'check_impressions', params: {} },
-      { module: 'gemini-architect', action: 'analyze_content', params: {} },
-      { module: 'gemini-architect', action: 'find_semantic_gaps', params: {} },
-    ],
-  },
-  {
-    name: 'New Keyword Alert',
-    description: 'When a new keyword is discovered in GSC, sync data and generate FAQ.',
-    trigger_event: 'gsc.keyword_discovered',
-    trigger_conditions: {},
-    actions: [
-      { module: 'gemini-architect', action: 'generate_faq', params: { count: 5 } },
-    ],
-  },
-];
 
 interface RecipeListProps {
   onBack?: () => void;
@@ -61,7 +30,9 @@ export default function RecipeList({ onBack }: RecipeListProps) {
   const [showFlowEditor, setShowFlowEditor] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [showTemplates, setShowTemplates] = useState(false);
+  const [showMarketplace, setShowMarketplace] = useState(false);
+  const [sharingRecipe, setSharingRecipe] = useState<Recipe | null>(null);
+  const [showImport, setShowImport] = useState(false);
 
   const handleCreate = async (data: any) => {
     try {
@@ -107,35 +78,6 @@ export default function RecipeList({ onBack }: RecipeListProps) {
     } finally {
       setTogglingId(null);
     }
-  };
-
-  const handleUseTemplate = (template: typeof RECIPE_TEMPLATES[0]) => {
-    setEditingRecipe(null);
-    setShowEditor(true);
-    setShowTemplates(false);
-    // We'll pass the template data as initialData to the editor
-    // The editor will open with pre-filled data
-    setEditingRecipe({
-      id: '',
-      user_id: '',
-      name: template.name,
-      description: template.description,
-      enabled: true,
-      trigger_event: template.trigger_event as any,
-      trigger_conditions: template.trigger_conditions,
-      actions: template.actions as Recipe['actions'],
-      site_ids: null,
-      graph_layout: null,
-      times_triggered: 0,
-      last_triggered_at: null,
-      created_at: '',
-      updated_at: '',
-    });
-  };
-
-  const startEdit = (recipe: Recipe) => {
-    setEditingRecipe(recipe);
-    setShowEditor(true);
   };
 
   const startFlowEdit = (recipe: Recipe | null) => {
@@ -203,7 +145,7 @@ export default function RecipeList({ onBack }: RecipeListProps) {
   return (
     <div className="h-full overflow-y-auto">
       {/* Header */}
-      <div className="flex justify-between items-center px-8 py-5 bg-[#F5F6F8] border-b border-gray-200 sticky top-0 z-10">
+      <div className="flex justify-between items-center px-8 py-5 bg-[#F5F5F7] border-b border-gray-200 sticky top-0 z-10">
         <div className="flex items-center gap-4">
           {onBack && (
             <>
@@ -227,37 +169,21 @@ export default function RecipeList({ onBack }: RecipeListProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <button
-              onClick={() => setShowTemplates(!showTemplates)}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 bg-white border border-gray-200 rounded-lg shadow-sm"
-            >
-              <Zap size={14} />
-              Templates
-              <ChevronDown size={12} />
-            </button>
+          <button
+            onClick={() => setShowMarketplace(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 hover:text-indigo-600 bg-white border border-gray-200 rounded-lg shadow-sm hover:border-indigo-200 transition-colors"
+          >
+            <Store size={14} />
+            Browse Templates
+          </button>
 
-            {showTemplates && (
-              <>
-                <div className="fixed inset-0 z-20" onClick={() => setShowTemplates(false)} />
-                <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl border border-gray-200 shadow-xl z-30 overflow-hidden">
-                  <div className="p-3 border-b border-gray-100">
-                    <span className="text-xs font-bold text-gray-500 uppercase">Pre-built Recipes</span>
-                  </div>
-                  {RECIPE_TEMPLATES.map((tmpl, i) => (
-                    <button
-                      key={i}
-                      onClick={() => handleUseTemplate(tmpl)}
-                      className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0"
-                    >
-                      <div className="text-sm font-medium text-gray-900">{tmpl.name}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{tmpl.description}</div>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+          <button
+            onClick={() => setShowImport(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 bg-white border border-gray-200 rounded-lg shadow-sm"
+          >
+            <FileJson size={14} />
+            Import
+          </button>
 
           <button
             onClick={() => startFlowEdit(null)}
@@ -282,13 +208,22 @@ export default function RecipeList({ onBack }: RecipeListProps) {
               Recipes are automation chains — when an event happens, a sequence of module actions runs automatically.
               Like Zapier, but for SEO.
             </p>
-            <button
-              onClick={() => { setEditingRecipe(null); setShowEditor(true); }}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200"
-            >
-              <Plus size={16} />
-              Create Your First Recipe
-            </button>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => setShowMarketplace(true)}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-indigo-600 text-sm font-semibold rounded-xl border-2 border-indigo-200 hover:bg-indigo-50 transition-colors"
+              >
+                <Store size={16} />
+                Browse Templates
+              </button>
+              <button
+                onClick={() => startFlowEdit(null)}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200"
+              >
+                <Plus size={16} />
+                Create From Scratch
+              </button>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
@@ -356,7 +291,14 @@ export default function RecipeList({ onBack }: RecipeListProps) {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2 ml-4">
+                    <div className="flex items-center gap-1.5 ml-4">
+                      <button
+                        onClick={() => setSharingRecipe(recipe)}
+                        className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        title="Share recipe"
+                      >
+                        <Share2 size={14} />
+                      </button>
                       <button
                         onClick={() => handleToggle(recipe)}
                         disabled={togglingId === recipe.id}
@@ -386,6 +328,25 @@ export default function RecipeList({ onBack }: RecipeListProps) {
           </div>
         )}
       </div>
+
+      {/* Modals */}
+      {showMarketplace && (
+        <RecipeMarketplace
+          onClose={() => setShowMarketplace(false)}
+          onInstalled={() => setShowMarketplace(false)}
+        />
+      )}
+      {sharingRecipe && (
+        <ShareRecipeModal
+          recipe={sharingRecipe}
+          onClose={() => setSharingRecipe(null)}
+        />
+      )}
+      {showImport && (
+        <ImportRecipeModal
+          onClose={() => setShowImport(false)}
+        />
+      )}
     </div>
   );
 }

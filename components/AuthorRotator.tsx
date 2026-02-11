@@ -12,7 +12,7 @@ interface AuthorRotatorProps {
 }
 
 const PageHeader = ({ title, onBack }: { title: string; onBack?: () => void }) => (
-    <div className="flex justify-between items-center px-4 sm:px-8 py-5 bg-[#F5F6F8] z-10 sticky top-0">
+    <div className="flex justify-between items-center px-4 sm:px-8 py-5 bg-[#F5F5F7] z-10 sticky top-0">
         <div className="flex items-center gap-3 sm:gap-4">
             {onBack && (
                 <>
@@ -113,7 +113,7 @@ const AuthorRotator: React.FC<AuthorRotatorProps> = ({ userRole, onBack }) => {
     };
 
     return (
-        <div className="h-full flex flex-col bg-[#F5F6F8] relative font-sans">
+        <div className="h-full flex flex-col bg-[#F5F5F7] relative font-sans">
             <PageHeader title="Personas" onBack={onBack} />
 
             <div className="flex-1 overflow-y-auto px-8 pb-32">

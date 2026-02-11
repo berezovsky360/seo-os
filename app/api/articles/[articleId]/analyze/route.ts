@@ -75,6 +75,21 @@ export async function POST(
 
     console.log(`Analysis complete. Score: ${analysis.score}/100`)
 
+    // Save preliminary_seo_score back to the database
+    // Try generated_articles first, then posts
+    const { error: genErr } = await supabase
+      .from('generated_articles')
+      .update({ preliminary_seo_score: analysis.score })
+      .eq('id', articleId)
+
+    if (genErr) {
+      // Might be a WP post — try posts table
+      await supabase
+        .from('posts')
+        .update({ seo_score: analysis.score })
+        .eq('id', articleId)
+    }
+
     return NextResponse.json({
       success: true,
       analysis,

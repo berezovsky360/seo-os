@@ -16,6 +16,7 @@ export interface SiteRecord {
   tone_of_voice: string
   language: string
   is_active: boolean
+  is_competitor: boolean
   created_at: string
   updated_at: string
 }
@@ -30,6 +31,7 @@ function transformSiteRecord(record: SiteRecord): Partial<Site> {
     theme: record.theme,
     wp_username: record.wp_username,
     wp_app_password: record.wp_app_password,
+    is_competitor: record.is_competitor,
     // Will be populated from other tables later
     metrics: {
       speedScore: 0,
@@ -66,6 +68,7 @@ export const siteService = {
       .from('sites')
       .select('*')
       .eq('is_active', true)
+      .order('display_order', { ascending: true })
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -99,6 +102,7 @@ export const siteService = {
     theme?: string
     wp_username?: string
     wp_app_password?: string
+    is_competitor?: boolean
   }): Promise<Site> {
     const { data: { user } } = await supabase.auth.getUser()
 
@@ -115,6 +119,7 @@ export const siteService = {
         theme: site.theme || 'hyper-blue',
         wp_username: site.wp_username,
         wp_app_password: site.wp_app_password,
+        is_competitor: site.is_competitor || false,
         is_active: true
       })
       .select()

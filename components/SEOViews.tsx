@@ -20,7 +20,7 @@ import { useQueryClient } from '@tanstack/react-query';
 // --- Shared Components matching KeywordResearch Style ---
 
 const PageHeader = ({ title, onBack }: { title: string; onBack?: () => void }) => (
-    <div className="flex justify-between items-center px-4 sm:px-8 py-5 bg-[#F5F6F8] z-10">
+    <div className="flex justify-between items-center px-4 sm:px-8 py-5 bg-[#F5F5F7] z-10">
         <div className="flex items-center gap-3 sm:gap-4">
             {onBack && (
                 <>
@@ -87,7 +87,7 @@ const FloatingSearchBar = ({ placeholder = "Ask anything..." }: { placeholder?: 
 // --- 1.1 Main Keywords View ---
 export const MainKeywordsView: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     return (
-        <div className="h-full flex flex-col bg-[#F5F6F8] relative font-sans">
+        <div className="h-full flex flex-col bg-[#F5F5F7] relative font-sans">
             <PageHeader title="Main Keywords" onBack={onBack} />
             
             <div className="flex-1 overflow-y-auto px-8 pb-32">
@@ -457,7 +457,7 @@ export const ArticleProductionView: React.FC<{ onBack?: () => void }> = ({ onBac
     };
 
     return (
-        <div className="h-full flex flex-col bg-[#F5F6F8] relative font-sans">
+        <div className="h-full flex flex-col bg-[#F5F5F7] relative font-sans">
             <PageHeader title="Content" onBack={onBack} />
 
             <div className="flex-1 overflow-y-auto px-8 pb-32">
@@ -910,7 +910,7 @@ export const FinishedArticlesView: React.FC<{ onBack?: () => void }> = ({ onBack
     };
 
     return (
-        <div className="h-full flex flex-col bg-[#F5F6F8] relative font-sans">
+        <div className="h-full flex flex-col bg-[#F5F5F7] relative font-sans">
             <PageHeader title="Published Articles" onBack={onBack} />
 
             <div className="flex-1 overflow-y-auto px-8 pb-32">
@@ -1006,7 +1006,7 @@ export const LLMTrackerView: React.FC<{ onBack?: () => void }> = ({ onBack }) =>
     };
 
     return (
-        <div className="h-full flex flex-col bg-[#F5F6F8] relative font-sans">
+        <div className="h-full flex flex-col bg-[#F5F5F7] relative font-sans">
             <PageHeader title="LLM Search Result Tracker" onBack={onBack} />
 
             <div className="flex-1 overflow-y-auto px-8 pb-32">

@@ -24,6 +24,9 @@ export type ModuleId =
   | 'docs'
   | 'ai-writer'
   | 'cron'
+  | 'content-engine'
+  | 'telegraph'
+  | 'competitor-analysis'
 
 // ====== API Key Types ======
 
@@ -87,6 +90,38 @@ export type EventType =
   // Cron Scheduler events
   | 'cron.job_executed'
   | 'cron.job_failed'
+  // Content Engine events
+  | 'engine.feed_polled'
+  | 'engine.items_scored'
+  | 'engine.facts_extracted'
+  | 'engine.facts_checked'
+  | 'engine.items_clustered'
+  | 'engine.sections_generated'
+  | 'engine.article_assembled'
+  | 'engine.article_published'
+  | 'engine.pipeline_completed'
+  | 'engine.pipeline_failed'
+  // Redirect events
+  | 'redirect.created'
+  | 'redirect.deleted'
+  | 'redirect.404_detected'
+  | 'redirect.slug_changed'
+  | 'redirect.bulk_imported'
+  // Content Lots (swipe review) events
+  | 'swipe.approved'
+  | 'swipe.rejected'
+  | 'swipe.super_liked'
+  // Telegraph events
+  | 'telegraph.page_created'
+  | 'telegraph.page_updated'
+  | 'telegraph.page_views_fetched'
+  // Competitor Analysis events
+  | 'competitor.analysis_completed'
+  | 'competitor.new_threat'
+  | 'competitor.keyword_gap_found'
+  // Sub-Recipe events (inter-recipe communication)
+  | 'recipe.sub_recipe_started'
+  | 'recipe.sub_recipe_completed'
 
 // ====== Event Severity ======
 

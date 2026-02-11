@@ -6,6 +6,14 @@ import { usePersonas } from '@/hooks/usePersonas'
 import { useGenerateTitle, useGenerateDescription } from '@/hooks/useAIWriter'
 import type { PersonaDB } from '@/types'
 
+const TONE_OPTIONS = [
+  { value: 'professional', label: 'Professional' },
+  { value: 'casual', label: 'Casual' },
+  { value: 'straightforward', label: 'Direct' },
+  { value: 'confident', label: 'Confident' },
+  { value: 'friendly', label: 'Friendly' },
+] as const
+
 interface AIGeneratePopoverProps {
   type: 'title' | 'description'
   postId: string
@@ -23,6 +31,7 @@ const AIGeneratePopover: React.FC<AIGeneratePopoverProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [selectedPersonaId, setSelectedPersonaId] = useState<string>('')
+  const [selectedTone, setSelectedTone] = useState<string>('professional')
   const [results, setResults] = useState<string[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -57,6 +66,7 @@ const AIGeneratePopover: React.FC<AIGeneratePopoverProps> = ({
           site_id: siteId,
           persona_id: selectedPersonaId || undefined,
           keyword,
+          tone: selectedTone,
         })
         setResults(result.titles)
       } else {
@@ -65,6 +75,7 @@ const AIGeneratePopover: React.FC<AIGeneratePopoverProps> = ({
           site_id: siteId,
           persona_id: selectedPersonaId || undefined,
           keyword,
+          tone: selectedTone,
         })
         setResults(result.descriptions)
       }
@@ -123,6 +134,26 @@ const AIGeneratePopover: React.FC<AIGeneratePopoverProps> = ({
                 </select>
               </div>
             )}
+
+            {/* Tone of Voice selector */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5">Tone of Voice</label>
+              <div className="flex flex-wrap gap-1.5">
+                {TONE_OPTIONS.map(tone => (
+                  <button
+                    key={tone.value}
+                    onClick={() => setSelectedTone(tone.value)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                      selectedTone === tone.value
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {tone.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* Generate button */}
             <button

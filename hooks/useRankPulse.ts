@@ -31,6 +31,26 @@ export interface CheckResult {
 
 // ====== Hooks ======
 
+export interface RankPulseSummary {
+  total: number
+  avgPosition: number
+  improved: number
+  dropped: number
+}
+
+export function useRankPulseSummary(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['rank-pulse-summary'],
+    queryFn: async (): Promise<RankPulseSummary> => {
+      const res = await fetch('/api/rank-pulse/summary')
+      if (!res.ok) throw new Error('Failed to fetch summary')
+      return res.json()
+    },
+    enabled,
+    staleTime: 120_000,
+  })
+}
+
 export function useRankPulseKeywords(siteId: string) {
   return useQuery({
     queryKey: ['rank-pulse-keywords', siteId],

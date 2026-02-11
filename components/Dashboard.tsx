@@ -1,10 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Site, UserRole, SiteStatus } from '../types';
-import { PlusCircle, FileText, CheckCircle, Sparkles, Activity, AlertCircle, Search, TrendingUp, Settings, ExternalLink, Calendar, Monitor, Smartphone, Wifi, WifiOff, RefreshCw, Loader2 } from 'lucide-react';
-import { THEMES } from '../constants';
+import {
+  PlusCircle, FileText, CheckCircle, Sparkles, Activity, AlertCircle, Search,
+  TrendingUp, Settings, ExternalLink, Calendar, Wifi, WifiOff,
+  RefreshCw, Loader2, Globe, BarChart3, Image as ImageIcon, BookOpen, Users, Bot,
+  Database, Wand2, Timer, Rss, Send, Palette, Swords, GripVertical
+} from 'lucide-react';
+import { THEMES, THEME_COLORS } from '../constants';
 import AddSiteModal from './AddSiteModal';
 import { useAllStats } from '@/hooks/useStats';
+import { useUpdateSite } from '@/hooks/useSites';
+import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/lib/contexts/ToastContext';
+import { useCore } from '@/lib/contexts/CoreContext';
+import type { ModuleId } from '@/lib/core/events';
+import { useRankPulseSummary } from '@/hooks/useRankPulse';
 
 interface DashboardProps {
   sites: Site[];
@@ -30,26 +40,19 @@ const WordpressIcon = ({ size = 20, className = "" }: { size?: number, className
 
 // Skeleton Card Component
 const SkeletonCard = () => (
-    <div className="group relative bg-white rounded-[2rem] shadow-[0_20px_40px_-12px_rgba(0,0,0,0.1)] overflow-hidden border border-white/60 flex flex-col h-[380px] animate-pulse">
+    <div className="group relative bg-white rounded-[2rem] shadow-[0_20px_40px_-12px_rgba(0,0,0,0.1)] overflow-hidden border border-white/60 flex flex-col h-[280px] animate-pulse">
         {/* Cover Area Skeleton */}
         <div className="relative h-[200px] w-full bg-gradient-to-br from-gray-200 via-gray-100 to-gray-200">
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent shimmer"></div>
         </div>
 
         {/* Body Skeleton */}
-        <div className="flex-1 p-6 bg-white flex flex-col justify-between">
-            <div className="space-y-4">
-                <div className="h-4 bg-gray-200 rounded-lg w-3/4"></div>
-                <div className="grid grid-cols-3 gap-2">
-                    {[...Array(6)].map((_, i) => (
-                        <div key={i} className="space-y-1">
-                            <div className="h-2 bg-gray-200 rounded w-1/2 mx-auto"></div>
-                            <div className="h-6 bg-gray-200 rounded-lg"></div>
-                        </div>
-                    ))}
+        <div className="flex-1 p-6 bg-white flex flex-col justify-end">
+            <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1">
+                    <div className="h-2 bg-gray-200 rounded w-1/2"></div>
+                    <div className="h-4 bg-gray-200 rounded w-2/3"></div>
                 </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
                 <div className="space-y-1">
                     <div className="h-2 bg-gray-200 rounded w-1/2"></div>
                     <div className="h-4 bg-gray-200 rounded w-2/3"></div>
@@ -63,15 +66,115 @@ const SkeletonCard = () => (
     </div>
 );
 
+// Module metadata for Quick Access navigation
+const MODULE_NAV: { id: string; name: string; icon: React.ReactNode; iconBg: string; viewState: string }[] = [
+  { id: 'rankmath-bridge', name: 'RankMath Bridge', icon: <Globe size={18} />, iconBg: 'bg-blue-50 text-blue-600', viewState: 'bulk-metadata' },
+  { id: 'rank-pulse', name: 'Rank Pulse', icon: <BarChart3 size={18} />, iconBg: 'bg-orange-50 text-orange-600', viewState: 'rank-pulse' },
+  { id: 'gsc-insights', name: 'GSC Insights', icon: <Search size={18} />, iconBg: 'bg-purple-50 text-purple-600', viewState: 'gsc-insights' },
+  { id: 'nana-banana', name: 'Nana Banana', icon: <ImageIcon size={18} />, iconBg: 'bg-yellow-50 text-yellow-600', viewState: 'nana-banana' },
+  { id: 'recipes', name: 'Recipes', icon: <BookOpen size={18} />, iconBg: 'bg-violet-50 text-violet-600', viewState: 'recipes' },
+  { id: 'personas', name: 'Personas', icon: <Users size={18} />, iconBg: 'bg-gray-50 text-gray-600', viewState: 'authors' },
+  { id: 'llm-tracker', name: 'LLM Tracker', icon: <Bot size={18} />, iconBg: 'bg-cyan-50 text-cyan-600', viewState: 'llm-tracker' },
+  { id: 'keyword-research', name: 'Keyword Research', icon: <Database size={18} />, iconBg: 'bg-emerald-50 text-emerald-600', viewState: 'keywords-db' },
+  { id: 'keyword-magic', name: 'Keyword Magic', icon: <Wand2 size={18} />, iconBg: 'bg-pink-50 text-pink-600', viewState: 'keywords-main' },
+  { id: 'docs', name: 'Documentation', icon: <FileText size={18} />, iconBg: 'bg-slate-50 text-slate-600', viewState: 'docs' },
+  { id: 'cron', name: 'Cron Scheduler', icon: <Timer size={18} />, iconBg: 'bg-violet-50 text-violet-600', viewState: 'cron-jobs' },
+  { id: 'content-engine', name: 'Content Engine', icon: <Rss size={18} />, iconBg: 'bg-rose-50 text-rose-600', viewState: 'content-engine' },
+  { id: 'telegraph', name: 'Telegraph', icon: <Send size={18} />, iconBg: 'bg-sky-50 text-sky-600', viewState: 'telegraph' },
+  { id: 'competitor-analysis', name: 'Competitors', icon: <Swords size={18} />, iconBg: 'bg-red-50 text-red-600', viewState: 'competitor-analysis' },
+];
+
+// Helper: check if a site has CMS credentials
+function isSiteConnected(site: Site): boolean {
+  return !!(site.wp_username && site.wp_app_password);
+}
+
 const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGeneratePost, userRole, onDeleteSite, onSelectSite, onChangeView }) => {
   const canAddProperty = userRole === 'ADMIN' || userRole === 'EDITOR';
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddSiteModalOpen, setIsAddSiteModalOpen] = useState(false);
   const [syncingSiteId, setSyncingSiteId] = useState<string | null>(null);
+  const [projectFilter, setProjectFilter] = useState<'all' | 'connected' | 'not-connected'>('all');
+  const [themePickerSiteId, setThemePickerSiteId] = useState<string | null>(null);
+  const themePickerRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
+  const updateSite = useUpdateSite();
+  const queryClient = useQueryClient();
+
+  // Drag-n-drop reordering state
+  const [draggedSiteId, setDraggedSiteId] = useState<string | null>(null);
+  const [ownSiteOrder, setOwnSiteOrder] = useState<string[] | null>(null);
+  const [competitorOrder, setCompetitorOrder] = useState<string[] | null>(null);
+
+  const persistSiteOrder = useCallback(async (orderedIds: string[]) => {
+    try {
+      await fetch('/api/sites/reorder', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderedIds }),
+      });
+      queryClient.invalidateQueries({ queryKey: ['sites'] });
+    } catch {
+      // silent
+    }
+  }, [queryClient]);
+
+  const handleSiteDragStart = (siteId: string, e: React.DragEvent) => {
+    e.stopPropagation();
+    setDraggedSiteId(siteId);
+  };
+
+  const handleSiteDragOver = (e: React.DragEvent, targetId: string, listType: 'own' | 'competitor') => {
+    e.preventDefault();
+    if (!draggedSiteId || draggedSiteId === targetId) return;
+
+    const setOrder = listType === 'own' ? setOwnSiteOrder : setCompetitorOrder;
+    const sourceList = listType === 'own' ? displaySites : competitorSites;
+    const currentOrderState = listType === 'own' ? ownSiteOrder : competitorOrder;
+    const ids = currentOrderState || sourceList.map(s => s.id);
+
+    const dragIdx = ids.indexOf(draggedSiteId);
+    const targetIdx = ids.indexOf(targetId);
+    if (dragIdx === -1 || targetIdx === -1) return;
+
+    const newOrder = [...ids];
+    newOrder.splice(dragIdx, 1);
+    newOrder.splice(targetIdx, 0, draggedSiteId);
+    setOrder(newOrder);
+  };
+
+  const handleSiteDragEnd = (listType: 'own' | 'competitor') => {
+    const order = listType === 'own' ? ownSiteOrder : competitorOrder;
+    if (order) {
+      persistSiteOrder(order);
+    }
+    setDraggedSiteId(null);
+  };
+
+  // Close theme picker on outside click
+  useEffect(() => {
+    if (!themePickerSiteId) return;
+    const handleClick = (e: MouseEvent) => {
+      if (themePickerRef.current && !themePickerRef.current.contains(e.target as Node)) {
+        setThemePickerSiteId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [themePickerSiteId]);
+
+  // Enabled modules for Quick Access
+  const { enabledModules } = useCore();
+  const activeModules = enabledModules.size > 0
+    ? MODULE_NAV.filter(m => enabledModules.has(m.id))
+    : MODULE_NAV;
 
   // Fetch real statistics for all sites
   const { data: statsMap = {} } = useAllStats();
+
+  // Rank Pulse summary (only when module is enabled)
+  const rankPulseEnabled = enabledModules.has('rank-pulse');
+  const { data: rankPulseSummary } = useRankPulseSummary(rankPulseEnabled);
 
   const handleSyncSite = async (site: Site, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -108,26 +211,63 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
     site.url.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const ownSites = filteredSites.filter(s => !s.is_competitor);
+  const competitorSites = filteredSites.filter(s => s.is_competitor);
+  const connectedSites = ownSites.filter(isSiteConnected);
+  const notConnectedSites = ownSites.filter(s => !isSiteConnected(s));
+  const rawDisplaySites = projectFilter === 'all'
+    ? ownSites
+    : projectFilter === 'connected'
+      ? connectedSites
+      : notConnectedSites;
+
+  // Apply local drag order
+  const displaySites = ownSiteOrder
+    ? rawDisplaySites.slice().sort((a, b) => {
+        const ai = ownSiteOrder.indexOf(a.id);
+        const bi = ownSiteOrder.indexOf(b.id);
+        if (ai === -1 && bi === -1) return 0;
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      })
+    : rawDisplaySites;
+
+  const orderedCompetitors = competitorOrder
+    ? competitorSites.slice().sort((a, b) => {
+        const ai = competitorOrder.indexOf(a.id);
+        const bi = competitorOrder.indexOf(b.id);
+        if (ai === -1 && bi === -1) return 0;
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      })
+    : competitorSites;
+
+  // Clear local order when sites data refreshes from server
+  useEffect(() => {
+    setOwnSiteOrder(null);
+    setCompetitorOrder(null);
+  }, [sites]);
 
   return (
     <div className="p-6 md:p-10 h-full overflow-y-auto bg-[#F5F5F7]">
-      
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
           <div className="flex flex-col gap-1">
               <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Dashboard</h1>
-              <p className="text-gray-500 text-sm font-medium">Overview of your portfolio performance.</p>
           </div>
 
           <div className="flex items-center gap-4">
               <div className="relative hidden md:block group">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-hover:text-indigo-500 transition-colors" />
-                  <input 
-                    type="text" 
-                    placeholder="Search projects..." 
+                  <input
+                    type="text"
+                    placeholder="Search projects..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-2xl text-sm w-64 focus:outline-none focus:ring-4 focus:ring-gray-100 transition-all shadow-sm hover:shadow-md" 
+                    className="pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-2xl text-sm w-64 focus:outline-none focus:ring-4 focus:ring-gray-100 transition-all shadow-sm hover:shadow-md"
                    />
               </div>
                {canAddProperty && (
@@ -142,7 +282,26 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
           </div>
       </div>
 
-      <h2 className="text-xl font-bold text-gray-900 mb-6 px-1 tracking-tight">Active Projects</h2>
+      {/* Project Filter Tabs */}
+      <div className="flex items-center gap-4 mb-6 px-1">
+        {([
+          { key: 'all' as const, label: 'All Projects', count: ownSites.length },
+          { key: 'connected' as const, label: 'Connected', count: connectedSites.length },
+          { key: 'not-connected' as const, label: 'Not Connected', count: notConnectedSites.length },
+        ]).map((tab, i) => (
+          <React.Fragment key={tab.key}>
+            {i > 0 && <div className="w-px h-6 bg-gray-200" />}
+            <button
+              onClick={() => setProjectFilter(tab.key)}
+              className={`text-xl font-bold tracking-tight transition-colors ${
+                projectFilter === tab.key ? 'text-gray-900' : 'text-gray-300 hover:text-gray-500'
+              }`}
+            >
+              {tab.label} ({tab.count})
+            </button>
+          </React.Fragment>
+        ))}
+      </div>
 
       {/* Grid of 3D Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -168,18 +327,26 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
               <SkeletonCard key={i} />
             ))}
           </>
-        ) : filteredSites.length === 0 && !canAddProperty ? (
-          // Empty state when no sites and can't add
+        ) : displaySites.length === 0 ? (
+          // Empty state — context-sensitive based on active tab
           <div className="col-span-full flex flex-col items-center justify-center py-20 text-center">
             <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center mb-4">
               <PlusCircle size={40} className="text-gray-300" />
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">No projects yet</h3>
-            <p className="text-gray-500 max-w-md">Connect your first WordPress site to start tracking and generating content.</p>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">
+              {projectFilter === 'connected' ? 'No connected sites'
+                : projectFilter === 'not-connected' ? 'All sites are connected'
+                : 'No projects yet'}
+            </h3>
+            <p className="text-gray-500 max-w-md">
+              {projectFilter === 'connected' ? 'Add CMS credentials in Site Settings to connect a site.'
+                : projectFilter === 'not-connected' ? 'All your sites have CMS credentials configured.'
+                : 'Add your first site to start tracking and generating content.'}
+            </p>
           </div>
         ) : (
           // Show actual sites with fade-in animation
-          filteredSites.map((site, index) => {
+          displaySites.map((site, index) => {
             const themeStyle = THEMES[site.theme || 'hyper-blue'];
             const isLightCover = site.theme === 'cotton-candy';
             const textColor = isLightCover ? 'text-gray-900' : 'text-white';
@@ -197,8 +364,12 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
             return (
                 <div
                     key={site.id}
+                    draggable
+                    onDragStart={(e) => handleSiteDragStart(site.id, e)}
+                    onDragOver={(e) => handleSiteDragOver(e, site.id, 'own')}
+                    onDragEnd={() => handleSiteDragEnd('own')}
                     onClick={() => onSelectSite(site)}
-                    className="group relative bg-white rounded-[2rem] shadow-[0_20px_40px_-12px_rgba(0,0,0,0.1)] hover:shadow-[0_30px_60px_-12px_rgba(0,0,0,0.15)] transition-all duration-500 cursor-pointer overflow-hidden border border-white/60 flex flex-col h-[380px] animate-fade-in"
+                    className={`group relative bg-white rounded-[2rem] shadow-[0_20px_40px_-12px_rgba(0,0,0,0.1)] hover:shadow-[0_30px_60px_-12px_rgba(0,0,0,0.15)] transition-all duration-500 cursor-pointer overflow-hidden border border-white/60 flex flex-col h-[280px] animate-fade-in ${draggedSiteId === site.id ? 'opacity-50 scale-95' : ''}`}
                     style={{ animationDelay: `${index * 50}ms` }}
                 >
                     {/* 3D Cover Area */}
@@ -249,7 +420,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
                             </div>
 
                             {/* Admin Links */}
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 relative">
                                 <a
                                     href={`https://${site.url}/wp-admin`}
                                     target="_blank"
@@ -263,6 +434,16 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
+                                        setThemePickerSiteId(themePickerSiteId === site.id ? null : site.id);
+                                    }}
+                                    className="w-8 h-8 rounded-full bg-white/10 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/80 hover:bg-white/30 transition-colors hover:text-white"
+                                    title="Change Theme"
+                                >
+                                    <Palette size={14} />
+                                </button>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
                                         onSelectSite(site);
                                     }}
                                     className="w-8 h-8 rounded-full bg-white/10 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/80 hover:bg-white/30 transition-colors hover:text-white"
@@ -270,6 +451,35 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
                                 >
                                     <Settings size={14} />
                                 </button>
+
+                                {/* Theme Picker Popover */}
+                                {themePickerSiteId === site.id && (
+                                    <div
+                                        ref={themePickerRef}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="absolute top-10 right-0 bg-white rounded-xl shadow-xl border border-gray-200 p-3 z-20 animate-[fadeIn_150ms_ease-out]"
+                                    >
+                                        <div className="flex gap-2">
+                                            {Object.entries(THEME_COLORS).map(([key, colors]) => (
+                                                <button
+                                                    key={key}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        updateSite.mutate({ siteId: site.id, updates: { theme: key } });
+                                                        setThemePickerSiteId(null);
+                                                    }}
+                                                    className={`w-8 h-8 rounded-lg transition-all ${
+                                                        site.theme === key
+                                                            ? 'ring-2 ring-indigo-500 ring-offset-1 scale-110'
+                                                            : 'hover:scale-110'
+                                                    }`}
+                                                    style={{ background: `linear-gradient(135deg, ${colors.from}, ${colors.to})` }}
+                                                    title={key}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -281,55 +491,9 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
                     </div>
 
                     {/* Stats Body */}
-                    <div className="flex-1 p-6 bg-white flex flex-col justify-between">
-                        {/* Keyword Rankings Distribution */}
-                        <div className="mb-4">
-                             <div className="flex justify-between items-center mb-3">
-                                 <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">Keywords in Google</span>
-                                 <div className="flex gap-1">
-                                     <button className="w-6 h-6 rounded-lg bg-indigo-500 text-white flex items-center justify-center hover:bg-indigo-600 transition-colors">
-                                         <Monitor size={12} />
-                                     </button>
-                                     <button className="w-6 h-6 rounded-lg bg-gray-100 text-gray-400 flex items-center justify-center hover:bg-gray-200 transition-colors">
-                                         <Smartphone size={12} />
-                                     </button>
-                                 </div>
-                             </div>
-
-                             {/* Rankings Grid */}
-                             <div className="grid grid-cols-3 gap-2">
-                                 <div className="text-center">
-                                     <div className="text-[10px] font-bold text-gray-400 mb-1">1</div>
-                                     <div className="text-lg font-bold text-emerald-600">{site.metrics.rankDistribution.top1}</div>
-                                 </div>
-                                 <div className="text-center">
-                                     <div className="text-[10px] font-bold text-gray-400 mb-1">2-3</div>
-                                     <div className="text-lg font-bold text-emerald-500">{site.metrics.rankDistribution.top3 - site.metrics.rankDistribution.top1}</div>
-                                 </div>
-                                 <div className="text-center">
-                                     <div className="text-[10px] font-bold text-gray-400 mb-1">4-5</div>
-                                     <div className="text-lg font-bold text-gray-400">{site.metrics.rankDistribution.top5 - site.metrics.rankDistribution.top3}</div>
-                                 </div>
-                             </div>
-
-                             <div className="grid grid-cols-3 gap-2 mt-2">
-                                 <div className="text-center">
-                                     <div className="text-[10px] font-bold text-gray-400 mb-1">6-10</div>
-                                     <div className="text-lg font-bold text-gray-400">{site.metrics.rankDistribution.top10 - site.metrics.rankDistribution.top5}</div>
-                                 </div>
-                                 <div className="text-center">
-                                     <div className="text-[10px] font-bold text-gray-400 mb-1">11-20</div>
-                                     <div className="text-lg font-bold text-gray-400">{site.metrics.rankDistribution.top20 - site.metrics.rankDistribution.top10}</div>
-                                 </div>
-                                 <div className="text-center">
-                                     <div className="text-[10px] font-bold text-gray-400 mb-1">21-100</div>
-                                     <div className="text-lg font-bold text-gray-400">{site.metrics.rankDistribution.top100 - site.metrics.rankDistribution.top20}</div>
-                                 </div>
-                             </div>
-                        </div>
-
+                    <div className="flex-1 p-6 bg-white flex flex-col justify-end">
                         {/* Bottom Metric Grid */}
-                        <div className="grid grid-cols-3 gap-3 pt-4 border-t border-gray-100">
+                        <div className="grid grid-cols-3 gap-3">
                              <div>
                                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1">Live</span>
                                  <div className="flex items-center gap-2">
@@ -358,39 +522,11 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
           })
         )}
 
-        {/* Calendar Card */}
-        {!isLoading && (
-        <button
-            onClick={() => onChangeView && onChangeView('calendar')}
-            className="group relative bg-white rounded-[2rem] shadow-[0_20px_40px_-12px_rgba(0,0,0,0.1)] hover:shadow-[0_30px_60px_-12px_rgba(0,0,0,0.15)] transition-all duration-500 cursor-pointer overflow-hidden border border-gray-200 flex flex-col h-[380px]"
-        >
-            {/* Gray Cover Area */}
-            <div
-                className="relative h-[200px] w-full p-6 flex flex-col justify-between transition-transform duration-700 group-hover:scale-[1.02] bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100"
-            >
-                {/* Mesh Overlay for Texture */}
-                <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 mix-blend-soft-light pointer-events-none"></div>
-
-                <div className="relative z-10 flex justify-center items-center h-full">
-                    <div className="w-16 h-16 rounded-2xl bg-white/80 backdrop-blur-md border border-gray-200 flex items-center justify-center shadow-lg">
-                        <Calendar size={32} className="text-gray-600" />
-                    </div>
-                </div>
-            </div>
-
-            {/* Stats Body */}
-            <div className="flex-1 p-6 bg-white flex flex-col justify-center items-center">
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">Calendar</h3>
-                <p className="text-sm text-gray-500 text-center">View scheduled articles and plan your content strategy</p>
-            </div>
-        </button>
-        )}
-
         {/* Add New Card (Empty State) */}
         {!isLoading && canAddProperty && (
             <button
               onClick={() => setIsAddSiteModalOpen(true)}
-              className="group relative rounded-[2rem] border-2 border-dashed border-gray-200 bg-gray-50/50 hover:bg-white hover:border-indigo-300 hover:shadow-xl transition-all duration-300 flex flex-col items-center justify-center h-[380px] cursor-pointer"
+              className="group relative rounded-[2rem] border-2 border-dashed border-gray-200 bg-gray-50/50 hover:bg-white hover:border-indigo-300 hover:shadow-xl transition-all duration-300 flex flex-col items-center justify-center h-[280px] cursor-pointer"
             >
                 <div className="w-16 h-16 rounded-3xl bg-white shadow-sm border border-gray-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 group-hover:shadow-md">
                     <PlusCircle size={32} className="text-gray-300 group-hover:text-indigo-500 transition-colors" />
@@ -400,6 +536,104 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
             </button>
         )}
       </div>
+
+      {/* Rank Pulse Summary */}
+      {rankPulseEnabled && rankPulseSummary && rankPulseSummary.total > 0 && (
+        <div className="mt-10">
+          <div className="flex items-center justify-between mb-4 px-1">
+            <div className="flex items-center gap-2">
+              <BarChart3 size={20} className="text-orange-500" />
+              <h2 className="text-xl font-bold text-gray-900 tracking-tight">Rank Pulse</h2>
+            </div>
+            <button
+              onClick={() => onChangeView && onChangeView('rank-pulse')}
+              className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 transition-colors"
+            >
+              View Details
+            </button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Keywords Tracked</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{rankPulseSummary.total}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Avg Position</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{rankPulseSummary.avgPosition || '—'}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+              <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wider">Improved</p>
+              <p className="text-2xl font-bold text-emerald-600 mt-1 flex items-center gap-1">
+                <TrendingUp size={18} />
+                {rankPulseSummary.improved}
+              </p>
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+              <p className="text-xs font-semibold text-red-400 uppercase tracking-wider">Dropped</p>
+              <p className="text-2xl font-bold text-red-500 mt-1 flex items-center gap-1">
+                <TrendingUp size={18} className="rotate-180" />
+                {rankPulseSummary.dropped}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Competitors Section */}
+      {competitorSites.length > 0 && (
+        <div className="mt-10">
+          <div className="flex items-center gap-2 mb-4 px-1">
+            <Swords size={20} className="text-red-500" />
+            <h2 className="text-xl font-bold text-gray-900 tracking-tight">Competitors</h2>
+            <span className="text-sm text-gray-400 font-medium">({competitorSites.length})</span>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            {orderedCompetitors.map((site, idx) => {
+              const favicon = site.favicon || `https://www.google.com/s2/favicons?domain=${site.url}&sz=64`;
+              return (
+                <div
+                  key={site.id}
+                  draggable
+                  onDragStart={(e) => handleSiteDragStart(site.id, e)}
+                  onDragOver={(e) => handleSiteDragOver(e, site.id, 'competitor')}
+                  onDragEnd={() => handleSiteDragEnd('competitor')}
+                  onClick={() => onSelectSite(site)}
+                  className={`w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left group cursor-pointer ${idx > 0 ? 'border-t border-gray-100' : ''} ${draggedSiteId === site.id ? 'opacity-50 bg-indigo-50' : ''}`}
+                >
+                  <GripVertical size={14} className="text-gray-300 group-hover:text-gray-400 flex-shrink-0 cursor-grab" />
+                  <img src={favicon} alt="" className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors">{site.name}</span>
+                    <span className="text-xs text-gray-400 ml-2">{site.url}</span>
+                  </div>
+                  <ExternalLink size={14} className="text-gray-300 group-hover:text-indigo-400 flex-shrink-0 transition-colors" />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Quick Access — activated modules */}
+      {activeModules.length > 0 && (
+        <div className="mt-10">
+          <h2 className="text-xl font-bold text-gray-900 mb-4 px-1 tracking-tight">Quick Access</h2>
+          <div className="flex flex-wrap gap-3">
+            {activeModules.map(mod => (
+              <button
+                key={mod.id}
+                onClick={() => onChangeView && onChangeView(mod.viewState)}
+                className="flex items-center gap-2.5 px-4 py-3 bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all group"
+              >
+                <div className={`w-8 h-8 rounded-xl ${mod.iconBg} flex items-center justify-center`}>
+                  {mod.icon}
+                </div>
+                <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900">{mod.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Add Site Modal */}
       <AddSiteModal

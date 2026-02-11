@@ -1102,3 +1102,554 @@ add_action('admin_notices', function () {
         echo '</p></div>';
     }
 });
+
+// ═══════════════════════════════════════════════════════════
+// 10. Redirect Management (Safe Layer — never overwrites other plugins)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Check if another redirect plugin already handles a given source path.
+ * Supports: Redirection plugin, RankMath, Yoast SEO Premium, Safe Redirect Manager.
+ * Returns ['handled' => true, 'plugin' => 'name'] if another plugin owns this path.
+ */
+function seo_os_check_redirect_conflict(string $source_path): array {
+    // 1. Check Redirection plugin (redirection table)
+    global $wpdb;
+    if ($wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}redirection_items'") !== null) {
+        $existing = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, url FROM {$wpdb->prefix}redirection_items WHERE url = %s AND status = 'enabled' LIMIT 1",
+            $source_path
+        ));
+        if ($existing) {
+            return ['handled' => true, 'plugin' => 'Redirection'];
+        }
+    }
+
+    // 2. Check RankMath redirections
+    if ($wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}rank_math_redirections'") !== null) {
+        $rm_source = ltrim($source_path, '/');
+        $existing = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}rank_math_redirections WHERE sources LIKE %s AND status = 'active' LIMIT 1",
+            '%' . $wpdb->esc_like($rm_source) . '%'
+        ));
+        if ($existing) {
+            return ['handled' => true, 'plugin' => 'RankMath'];
+        }
+    }
+
+    // 3. Check Safe Redirect Manager (post type)
+    if (post_type_exists('redirect_rule')) {
+        $args = [
+            'post_type'      => 'redirect_rule',
+            'post_status'    => 'publish',
+            'posts_per_page' => 1,
+            'meta_query'     => [
+                ['key' => '_redirect_rule_from', 'value' => $source_path, 'compare' => '='],
+            ],
+        ];
+        $q = new WP_Query($args);
+        if ($q->have_posts()) {
+            return ['handled' => true, 'plugin' => 'Safe Redirect Manager'];
+        }
+    }
+
+    return ['handled' => false, 'plugin' => null];
+}
+
+/**
+ * Detect redirect loops: A → B → A or A → B → C → A (max 10 hops).
+ * Returns true if a loop is detected.
+ */
+function seo_os_detect_redirect_loop(string $source_path, string $target_url, array $redirects): bool {
+    $visited = [$source_path];
+    $current = $target_url;
+    $max_hops = 10;
+
+    for ($i = 0; $i < $max_hops; $i++) {
+        // Normalize current to path only
+        $current_path = parse_url($current, PHP_URL_PATH);
+        if (empty($current_path)) break;
+
+        // Check if we've been here before
+        if (in_array($current_path, $visited, true)) {
+            return true; // Loop detected
+        }
+        $visited[] = $current_path;
+
+        // Find if this path has a redirect too
+        $found = false;
+        foreach ($redirects as $rule) {
+            if (!($rule['enabled'] ?? true)) continue;
+            $rule_source = $rule['source_path'] ?? '';
+            if (rtrim($rule_source, '/') === rtrim($current_path, '/')) {
+                $current = $rule['target_url'];
+                $found = true;
+                break;
+            }
+        }
+        if (!$found) break;
+    }
+
+    return false;
+}
+
+// Handle redirects on every page load (priority 1 = before everything)
+add_action('template_redirect', 'seo_os_handle_redirects', 1);
+
+function seo_os_handle_redirects(): void {
+    $request_uri = $_SERVER['REQUEST_URI'] ?? '';
+    $path = parse_url($request_uri, PHP_URL_PATH);
+    if (empty($path)) return;
+
+    // Normalize: ensure leading slash, strip trailing slash (except root)
+    $path = '/' . ltrim($path, '/');
+    if ($path !== '/' && substr($path, -1) === '/') {
+        $path_trimmed = rtrim($path, '/');
+    } else {
+        $path_trimmed = $path;
+    }
+
+    $redirects = get_option('seo_os_redirects', []);
+    if (empty($redirects) || !is_array($redirects)) return;
+
+    // 1. Exact match (fast lookup)
+    foreach ($redirects as $rule) {
+        if (!empty($rule['is_regex'])) continue;
+        if (!($rule['enabled'] ?? true)) continue;
+
+        $source = $rule['source_path'] ?? '';
+        $source_trimmed = rtrim($source, '/');
+        if ($source_trimmed === '') $source_trimmed = '/';
+
+        if ($path === $source || $path_trimmed === $source_trimmed) {
+            $type = intval($rule['type'] ?? 301);
+            wp_redirect($rule['target_url'], $type);
+            exit;
+        }
+    }
+
+    // 2. Regex match (slower, checked second)
+    foreach ($redirects as $rule) {
+        if (empty($rule['is_regex'])) continue;
+        if (!($rule['enabled'] ?? true)) continue;
+
+        $pattern = $rule['source_path'] ?? '';
+        if (empty($pattern)) continue;
+
+        // Convert wildcard * to regex .* if not already regex
+        $regex_pattern = str_replace('*', '(.*)', $pattern);
+        $regex_pattern = '#^' . $regex_pattern . '$#i';
+
+        if (preg_match($regex_pattern, $path, $matches)) {
+            $target = $rule['target_url'];
+            // Replace $1, $2, etc. with captured groups
+            for ($i = 1; $i < count($matches); $i++) {
+                $target = str_replace('$' . $i, $matches[$i], $target);
+            }
+            $type = intval($rule['type'] ?? 301);
+            wp_redirect($target, $type);
+            exit;
+        }
+    }
+}
+
+// Log 404 errors (priority 10, after redirect check)
+add_action('template_redirect', 'seo_os_log_404', 10);
+
+function seo_os_log_404(): void {
+    if (!is_404()) return;
+
+    $path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+    if (empty($path)) return;
+
+    // Throttle: don't log same path more than once per 5 minutes
+    $transient_key = 'seo_os_404_' . md5($path);
+    if (get_transient($transient_key)) return;
+    set_transient($transient_key, 1, 300); // 5 minutes
+
+    // Store in local buffer (wp_options)
+    $buffer = get_option('seo_os_404_buffer', []);
+    $referer = $_SERVER['HTTP_REFERER'] ?? '';
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+
+    // Find existing entry or create new
+    $found = false;
+    foreach ($buffer as &$entry) {
+        if ($entry['path'] === $path) {
+            $entry['hits'] = ($entry['hits'] ?? 1) + 1;
+            $entry['last_seen'] = current_time('mysql', true);
+            $entry['referer'] = $referer ?: $entry['referer'];
+            $entry['user_agent'] = $user_agent ?: $entry['user_agent'];
+            $found = true;
+            break;
+        }
+    }
+    unset($entry);
+
+    if (!$found) {
+        $buffer[] = [
+            'path'       => $path,
+            'referer'    => $referer,
+            'user_agent' => $user_agent,
+            'hits'       => 1,
+            'first_seen' => current_time('mysql', true),
+            'last_seen'  => current_time('mysql', true),
+        ];
+    }
+
+    // Keep buffer at max 500 entries (oldest removed)
+    if (count($buffer) > 500) {
+        $buffer = array_slice($buffer, -500);
+    }
+
+    update_option('seo_os_404_buffer', $buffer, false); // no autoload
+}
+
+// Detect slug changes and auto-create redirects
+add_action('post_updated', 'seo_os_detect_slug_change', 10, 3);
+
+function seo_os_detect_slug_change(int $post_id, WP_Post $post_after, WP_Post $post_before): void {
+    // Only track published posts
+    if ($post_after->post_status !== 'publish') return;
+    if ($post_before->post_name === $post_after->post_name) return;
+    if (empty($post_before->post_name)) return;
+
+    $old_path = '/' . $post_before->post_name . '/';
+    $new_url = get_permalink($post_id);
+
+    // Store in slug change buffer for SEO OS to pick up
+    $changes = get_option('seo_os_slug_changes', []);
+    $changes[] = [
+        'post_id'  => $post_id,
+        'old_path' => $old_path,
+        'new_url'  => $new_url,
+        'old_slug' => $post_before->post_name,
+        'new_slug' => $post_after->post_name,
+        'time'     => current_time('mysql', true),
+    ];
+
+    // Keep max 100 entries
+    if (count($changes) > 100) {
+        $changes = array_slice($changes, -100);
+    }
+
+    update_option('seo_os_slug_changes', $changes, false);
+
+    // Check if another plugin already handles this path — if so, skip
+    $conflict = seo_os_check_redirect_conflict($old_path);
+    if ($conflict['handled']) {
+        // Another plugin owns this redirect — we just log it, don't override
+        $changes[count($changes) - 1]['skipped'] = true;
+        $changes[count($changes) - 1]['conflict_plugin'] = $conflict['plugin'];
+        update_option('seo_os_slug_changes', $changes, false);
+        return;
+    }
+
+    // Also add to local redirect cache immediately
+    $redirects = get_option('seo_os_redirects', []);
+    // Check if already exists in our own rules
+    foreach ($redirects as $r) {
+        if (($r['source_path'] ?? '') === $old_path) return;
+    }
+
+    // Check for loops before creating
+    if (seo_os_detect_redirect_loop($old_path, $new_url, $redirects)) {
+        return; // Would create a loop — skip
+    }
+
+    $redirects[] = [
+        'source_path'    => $old_path,
+        'target_url'     => $new_url,
+        'type'           => '301',
+        'is_regex'       => false,
+        'enabled'        => true,
+        'auto_generated' => true,
+        'note'           => "Slug changed: {$post_before->post_name} → {$post_after->post_name}",
+    ];
+
+    update_option('seo_os_redirects', $redirects);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 11. Redirect REST API Endpoints
+// ═══════════════════════════════════════════════════════════
+
+add_action('rest_api_init', function () {
+    // GET /seo-os/v1/redirects — get cached redirect rules
+    register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/redirects', [
+        'methods'             => 'GET',
+        'callback'            => 'seo_os_get_redirects',
+        'permission_callback' => 'seo_os_check_permissions',
+    ]);
+
+    // POST /seo-os/v1/redirects/sync — receive full redirect list from SEO OS
+    register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/redirects/sync', [
+        'methods'             => 'POST',
+        'callback'            => 'seo_os_sync_redirects',
+        'permission_callback' => 'seo_os_check_admin_permissions',
+    ]);
+
+    // GET /seo-os/v1/redirects/404-log — get 404 buffer
+    register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/redirects/404-log', [
+        'methods'             => 'GET',
+        'callback'            => 'seo_os_get_404_log',
+        'permission_callback' => 'seo_os_check_permissions',
+    ]);
+
+    // DELETE /seo-os/v1/redirects/404-log — clear 404 buffer
+    register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/redirects/404-log', [
+        'methods'             => 'DELETE',
+        'callback'            => 'seo_os_clear_404_log',
+        'permission_callback' => 'seo_os_check_admin_permissions',
+    ]);
+
+    // GET /seo-os/v1/redirects/slug-changes — get slug change log
+    register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/redirects/slug-changes', [
+        'methods'             => 'GET',
+        'callback'            => 'seo_os_get_slug_changes',
+        'permission_callback' => 'seo_os_check_permissions',
+    ]);
+
+    // DELETE /seo-os/v1/redirects/slug-changes — clear slug changes after sync
+    register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/redirects/slug-changes', [
+        'methods'             => 'DELETE',
+        'callback'            => 'seo_os_clear_slug_changes',
+        'permission_callback' => 'seo_os_check_admin_permissions',
+    ]);
+
+    // POST /seo-os/v1/redirects/test — test a URL against redirect rules
+    register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/redirects/test', [
+        'methods'             => 'POST',
+        'callback'            => 'seo_os_test_redirect',
+        'permission_callback' => 'seo_os_check_permissions',
+    ]);
+
+    // POST /seo-os/v1/redirects/validate — check for conflicts + loops before creating
+    register_rest_route(SEO_OS_CONNECTOR_NAMESPACE, '/redirects/validate', [
+        'methods'             => 'POST',
+        'callback'            => 'seo_os_validate_redirect',
+        'permission_callback' => 'seo_os_check_permissions',
+    ]);
+});
+
+function seo_os_get_redirects(): WP_REST_Response {
+    $redirects = get_option('seo_os_redirects', []);
+    return new WP_REST_Response([
+        'success'   => true,
+        'redirects' => $redirects,
+        'count'     => count($redirects),
+    ], 200);
+}
+
+function seo_os_sync_redirects(WP_REST_Request $request): WP_REST_Response {
+    $body = $request->get_json_params();
+    $redirects = $body['redirects'] ?? [];
+
+    if (!is_array($redirects)) {
+        return new WP_REST_Response(['error' => 'Invalid redirects data'], 400);
+    }
+
+    // Validate and sanitize each rule
+    $clean = [];
+    foreach ($redirects as $rule) {
+        $clean[] = [
+            'id'             => sanitize_text_field($rule['id'] ?? ''),
+            'source_path'    => sanitize_text_field($rule['source_path'] ?? ''),
+            'target_url'     => esc_url_raw($rule['target_url'] ?? ''),
+            'type'           => in_array($rule['type'] ?? '301', ['301', '302', '307']) ? $rule['type'] : '301',
+            'is_regex'       => !empty($rule['is_regex']),
+            'enabled'        => $rule['enabled'] ?? true,
+            'auto_generated' => $rule['auto_generated'] ?? false,
+            'note'           => sanitize_text_field($rule['note'] ?? ''),
+        ];
+    }
+
+    update_option('seo_os_redirects', $clean);
+
+    return new WP_REST_Response([
+        'success' => true,
+        'synced'  => count($clean),
+    ], 200);
+}
+
+function seo_os_get_404_log(): WP_REST_Response {
+    $buffer = get_option('seo_os_404_buffer', []);
+    // Sort by hits desc
+    usort($buffer, function ($a, $b) {
+        return ($b['hits'] ?? 0) - ($a['hits'] ?? 0);
+    });
+    return new WP_REST_Response([
+        'success' => true,
+        'entries' => $buffer,
+        'count'   => count($buffer),
+    ], 200);
+}
+
+function seo_os_clear_404_log(): WP_REST_Response {
+    update_option('seo_os_404_buffer', []);
+    return new WP_REST_Response(['success' => true], 200);
+}
+
+function seo_os_get_slug_changes(): WP_REST_Response {
+    $changes = get_option('seo_os_slug_changes', []);
+    return new WP_REST_Response([
+        'success' => true,
+        'changes' => $changes,
+        'count'   => count($changes),
+    ], 200);
+}
+
+function seo_os_clear_slug_changes(): WP_REST_Response {
+    update_option('seo_os_slug_changes', []);
+    return new WP_REST_Response(['success' => true], 200);
+}
+
+function seo_os_test_redirect(WP_REST_Request $request): WP_REST_Response {
+    $body = $request->get_json_params();
+    $test_url = $body['url'] ?? '';
+    if (empty($test_url)) {
+        return new WP_REST_Response(['error' => 'URL is required'], 400);
+    }
+
+    $path = parse_url($test_url, PHP_URL_PATH);
+    if (empty($path)) $path = '/';
+
+    $redirects = get_option('seo_os_redirects', []);
+
+    // Test exact matches
+    foreach ($redirects as $rule) {
+        if (!empty($rule['is_regex'])) continue;
+        if (!($rule['enabled'] ?? true)) continue;
+
+        $source = rtrim($rule['source_path'] ?? '', '/');
+        $test_path = rtrim($path, '/');
+        if ($source === '' || $test_path === '') {
+            if ($path === ($rule['source_path'] ?? '')) {
+                return new WP_REST_Response([
+                    'success' => true,
+                    'match'   => true,
+                    'rule'    => $rule,
+                    'target'  => $rule['target_url'],
+                    'type'    => $rule['type'] ?? '301',
+                ], 200);
+            }
+        } elseif ($source === $test_path) {
+            return new WP_REST_Response([
+                'success' => true,
+                'match'   => true,
+                'rule'    => $rule,
+                'target'  => $rule['target_url'],
+                'type'    => $rule['type'] ?? '301',
+            ], 200);
+        }
+    }
+
+    // Test regex matches
+    foreach ($redirects as $rule) {
+        if (empty($rule['is_regex'])) continue;
+        if (!($rule['enabled'] ?? true)) continue;
+
+        $pattern = $rule['source_path'] ?? '';
+        $regex = '#^' . str_replace('*', '(.*)', $pattern) . '$#i';
+        if (preg_match($regex, $path, $matches)) {
+            $target = $rule['target_url'];
+            for ($i = 1; $i < count($matches); $i++) {
+                $target = str_replace('$' . $i, $matches[$i], $target);
+            }
+            return new WP_REST_Response([
+                'success' => true,
+                'match'   => true,
+                'rule'    => $rule,
+                'target'  => $target,
+                'type'    => $rule['type'] ?? '301',
+            ], 200);
+        }
+    }
+
+    return new WP_REST_Response([
+        'success' => true,
+        'match'   => false,
+        'message' => 'No redirect rule matches this URL',
+    ], 200);
+}
+
+/**
+ * Validate a redirect before creation — checks conflicts with other plugins,
+ * redirect loops, and whether the target URL returns 200.
+ */
+function seo_os_validate_redirect(WP_REST_Request $request): WP_REST_Response {
+    $body = $request->get_json_params();
+    $source_path = $body['source_path'] ?? '';
+    $target_url  = $body['target_url'] ?? '';
+
+    if (empty($source_path)) {
+        return new WP_REST_Response(['error' => 'source_path is required'], 400);
+    }
+
+    $warnings = [];
+    $errors   = [];
+
+    // 1. Check conflict with other redirect plugins
+    $conflict = seo_os_check_redirect_conflict($source_path);
+    if ($conflict['handled']) {
+        $warnings[] = [
+            'type'    => 'conflict',
+            'message' => "This path is already handled by {$conflict['plugin']}. SEO OS will NOT override it.",
+            'plugin'  => $conflict['plugin'],
+        ];
+    }
+
+    // 2. Check redirect loop
+    if (!empty($target_url)) {
+        $redirects = get_option('seo_os_redirects', []);
+        if (seo_os_detect_redirect_loop($source_path, $target_url, $redirects)) {
+            $errors[] = [
+                'type'    => 'loop',
+                'message' => 'This redirect would create a redirect loop (A → B → ... → A).',
+            ];
+        }
+
+        // 3. Check if source = target (self-redirect)
+        $target_path = parse_url($target_url, PHP_URL_PATH);
+        if ($target_path && rtrim($source_path, '/') === rtrim($target_path, '/')) {
+            $errors[] = [
+                'type'    => 'self_redirect',
+                'message' => 'Source and target paths are the same — this would cause an infinite loop.',
+            ];
+        }
+
+        // 4. Quick check if target URL returns 200 (only for absolute or relative URLs)
+        if (str_starts_with($target_url, '/')) {
+            $full_url = home_url($target_url);
+        } elseif (str_starts_with($target_url, 'http')) {
+            $full_url = $target_url;
+        } else {
+            $full_url = null;
+        }
+
+        if ($full_url) {
+            $response = wp_remote_head($full_url, ['timeout' => 3, 'redirection' => 0]);
+            if (!is_wp_error($response)) {
+                $status = wp_remote_retrieve_response_code($response);
+                if ($status === 404) {
+                    $warnings[] = [
+                        'type'    => 'target_404',
+                        'message' => "The target URL returns 404. The redirect would send visitors to a broken page.",
+                    ];
+                } elseif ($status >= 300 && $status < 400) {
+                    $warnings[] = [
+                        'type'    => 'target_redirects',
+                        'message' => "The target URL itself redirects (HTTP {$status}). This creates a redirect chain.",
+                    ];
+                }
+            }
+        }
+    }
+
+    return new WP_REST_Response([
+        'success'  => true,
+        'safe'     => empty($errors),
+        'errors'   => $errors,
+        'warnings' => $warnings,
+    ], 200);
+}

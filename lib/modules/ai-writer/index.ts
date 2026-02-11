@@ -37,6 +37,13 @@ export class AIWriterModule implements SEOModule {
         { name: 'site_id', type: 'string', label: 'Site ID', required: true },
         { name: 'persona_id', type: 'string', label: 'Persona', required: false },
         { name: 'keyword', type: 'string', label: 'Focus Keyword', required: false },
+        { name: 'tone', type: 'select', label: 'Tone of Voice', required: false, default: 'professional', options: [
+          { label: 'Professional', value: 'professional' },
+          { label: 'Casual', value: 'casual' },
+          { label: 'Straightforward', value: 'straightforward' },
+          { label: 'Confident', value: 'confident' },
+          { label: 'Friendly', value: 'friendly' },
+        ]},
       ],
     },
     {
@@ -48,6 +55,13 @@ export class AIWriterModule implements SEOModule {
         { name: 'site_id', type: 'string', label: 'Site ID', required: true },
         { name: 'persona_id', type: 'string', label: 'Persona', required: false },
         { name: 'keyword', type: 'string', label: 'Focus Keyword', required: false },
+        { name: 'tone', type: 'select', label: 'Tone of Voice', required: false, default: 'professional', options: [
+          { label: 'Professional', value: 'professional' },
+          { label: 'Casual', value: 'casual' },
+          { label: 'Straightforward', value: 'straightforward' },
+          { label: 'Confident', value: 'confident' },
+          { label: 'Friendly', value: 'friendly' },
+        ]},
       ],
     },
     {
@@ -129,6 +143,7 @@ export class AIWriterModule implements SEOModule {
   }
 
   private async fetchPostData(postId: string, siteId: string, context: ModuleContext) {
+    // Try posts table first (WordPress synced posts)
     const { data: post } = await context.supabase
       .from('posts')
       .select('title, content, focus_keyword, seo_title, seo_description, slug')
@@ -136,8 +151,19 @@ export class AIWriterModule implements SEOModule {
       .eq('site_id', siteId)
       .single()
 
-    if (!post) throw new Error('Post not found')
-    return post
+    if (post) return post
+
+    // Fallback: try generated_articles table (locally created articles)
+    const { data: article } = await context.supabase
+      .from('generated_articles')
+      .select('title, content, keyword, seo_title, seo_description, slug')
+      .eq('id', postId)
+      .eq('site_id', siteId)
+      .single()
+
+    if (article) return { ...article, focus_keyword: article.keyword }
+
+    throw new Error('Post not found')
   }
 
   // ====== Generate Title ======
@@ -146,13 +172,14 @@ export class AIWriterModule implements SEOModule {
     params: Record<string, any>,
     context: ModuleContext
   ): Promise<Record<string, any>> {
-    const { post_id, site_id, persona_id, keyword } = params
+    const { post_id, site_id, persona_id, keyword, tone } = params
     if (!post_id || !site_id) throw new Error('post_id and site_id are required')
 
     const ai = await this.getGeminiClient(context)
     const post = await this.fetchPostData(post_id, site_id, context)
 
     const focusKeyword = keyword || post.focus_keyword || ''
+    const toneOfVoice = tone || 'professional'
     const { systemInstruction, writingStyle } = await this.getPersonaContext(
       persona_id, post.title || focusKeyword, context
     )
@@ -165,15 +192,19 @@ Generate exactly 3 SEO-optimized title options for the following article.
 
 Article Title: ${post.title || 'Untitled'}
 Focus Keyword: ${focusKeyword || 'N/A'}
+Tone of Voice: ${toneOfVoice}
 Writing Style: ${writingStyle}
 Article Content (excerpt):
 ${plainContent}
 
 Requirements:
 - Each title must be between 50-60 characters
-- Include the focus keyword naturally
-- Make titles compelling and click-worthy
-- Each title should use a different approach (question, how-to, listicle, emotional, etc.)
+- Place the focus keyword near the beginning of the title when possible
+- Include the focus keyword naturally — do not force it
+- Use power words where appropriate (Ultimate, Essential, Complete, Proven, Best)
+- Make titles compelling, click-worthy, and unique — avoid generic phrasing
+- Write in a ${toneOfVoice} tone of voice
+- Each title should use a different approach (question, how-to, listicle, emotional, data-driven, etc.)
 
 Return ONLY valid JSON in this exact format:
 {"titles": ["Title Option 1", "Title Option 2", "Title Option 3"]}`
@@ -206,13 +237,14 @@ Return ONLY valid JSON in this exact format:
     params: Record<string, any>,
     context: ModuleContext
   ): Promise<Record<string, any>> {
-    const { post_id, site_id, persona_id, keyword } = params
+    const { post_id, site_id, persona_id, keyword, tone } = params
     if (!post_id || !site_id) throw new Error('post_id and site_id are required')
 
     const ai = await this.getGeminiClient(context)
     const post = await this.fetchPostData(post_id, site_id, context)
 
     const focusKeyword = keyword || post.focus_keyword || ''
+    const toneOfVoice = tone || 'professional'
     const { systemInstruction, writingStyle } = await this.getPersonaContext(
       persona_id, post.title || focusKeyword, context
     )
@@ -226,16 +258,19 @@ Generate exactly 3 compelling meta description options for the following article
 Article Title: ${post.title || 'Untitled'}
 SEO Title: ${post.seo_title || 'N/A'}
 Focus Keyword: ${focusKeyword || 'N/A'}
+Tone of Voice: ${toneOfVoice}
 Writing Style: ${writingStyle}
 Article Content (excerpt):
 ${plainContent}
 
 Requirements:
 - Each description must be between 140-160 characters
-- Include the focus keyword naturally near the beginning
-- Include a clear call to action or value proposition
-- Make descriptions enticing for search result clicks
-- Each description should use a different approach
+- Start with an action verb or the focus keyword for maximum impact
+- Include the focus keyword naturally within the first 80 characters
+- Include a unique selling point, benefit, or value proposition
+- Create urgency or curiosity without resorting to clickbait
+- Write in a ${toneOfVoice} tone of voice
+- Each description should use a different approach (benefit-driven, question, how-to, data-driven)
 
 Return ONLY valid JSON in this exact format:
 {"descriptions": ["Description 1", "Description 2", "Description 3"]}`

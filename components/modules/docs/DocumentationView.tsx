@@ -84,9 +84,9 @@ function RouteRow({ method, path, desc }: { method: string; path: string; desc: 
 
 export default function DocumentationView({ onBack }: DocumentationViewProps) {
   return (
-    <div className="h-full flex flex-col bg-[#F5F6F8] relative font-sans">
+    <div className="h-full flex flex-col bg-[#F5F5F7] relative font-sans">
       {/* Header */}
-      <div className="flex justify-between items-center px-4 sm:px-8 py-5 bg-[#F5F6F8] z-10 sticky top-0">
+      <div className="flex justify-between items-center px-4 sm:px-8 py-5 bg-[#F5F5F7] z-10 sticky top-0">
         <div className="flex items-center gap-3 sm:gap-4">
           {onBack && (
             <>

@@ -68,7 +68,7 @@ const ArticleDrawer: React.FC<ArticleDrawerProps> = ({ article, isOpen, onClose 
         <div className="flex-1 flex overflow-hidden">
             
             {/* Center: Editor Canvas */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#F5F6F8]">
+            <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#F5F5F7]">
                 <div className="max-w-4xl mx-auto bg-white min-h-[800px] rounded-xl shadow-sm border border-gray-200 flex flex-col relative">
                     
                     {/* WP Style Toolbar */}

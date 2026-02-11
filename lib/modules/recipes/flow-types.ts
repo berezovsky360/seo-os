@@ -55,6 +55,15 @@ export interface CronNodeData {
   [key: string]: unknown
 }
 
+export interface SubRecipeNodeData {
+  type: 'sub_recipe'
+  recipe_id: string
+  recipe_name: string
+  input_mapping: Record<string, string>
+  label: string
+  [key: string]: unknown
+}
+
 export type FlowNodeData =
   | TriggerNodeData
   | ConditionNodeData
@@ -62,6 +71,7 @@ export type FlowNodeData =
   | DelayNodeData
   | BranchNodeData
   | CronNodeData
+  | SubRecipeNodeData
 
 export type FlowNode = Node<FlowNodeData>
 export type FlowEdge = Edge
@@ -82,10 +92,11 @@ export interface NodePaletteItem {
 }
 
 export const NODE_PALETTE: NodePaletteItem[] = [
-  { type: 'trigger', label: 'Event Trigger', description: 'Start when event fires', color: 'amber' },
-  { type: 'condition', label: 'Condition', description: 'Check a value', color: 'orange' },
-  { type: 'action', label: 'Action', description: 'Run module action', color: 'emerald' },
-  { type: 'delay', label: 'Delay', description: 'Wait before continuing', color: 'slate' },
-  { type: 'branch', label: 'Branch', description: 'If/else split', color: 'purple' },
-  { type: 'cron', label: 'Cron Trigger', description: 'Time-based schedule', color: 'violet' },
+  { type: 'trigger', label: 'When...', description: 'Start when an event happens', color: 'amber' },
+  { type: 'cron', label: 'On Schedule', description: 'Run at a specific time', color: 'violet' },
+  { type: 'action', label: 'Do This', description: 'Run a module action', color: 'emerald' },
+  { type: 'condition', label: 'Only If', description: 'Filter by a condition', color: 'orange' },
+  { type: 'branch', label: 'If / Else', description: 'Split into two paths', color: 'purple' },
+  { type: 'delay', label: 'Wait', description: 'Pause before next step', color: 'slate' },
+  { type: 'sub_recipe', label: 'Sub-Recipe', description: 'Call another recipe', color: 'cyan' },
 ]

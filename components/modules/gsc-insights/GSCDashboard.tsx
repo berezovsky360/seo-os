@@ -400,7 +400,7 @@ export default function GSCDashboard({ onBack }: { onBack?: () => void } = {}) {
       {/* ------------------------------------------------------------------ */}
       {/* Header */}
       {/* ------------------------------------------------------------------ */}
-      <div className="sticky top-0 z-10 bg-[#F5F6F8] pb-4 pt-2 -mx-1 px-1">
+      <div className="sticky top-0 z-10 bg-[#F5F5F7] pb-4 pt-2 -mx-1 px-1">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             {onBack && (

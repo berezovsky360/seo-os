@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Site } from '../types';
 import { ArticleRecord } from '@/lib/services/articleService';
-import { ChevronLeft, ChevronRight, Settings, FileText, Tag, Folder, Save, CheckCircle2, CheckSquare, MoreHorizontal, Filter, Search, Globe, AlertTriangle, Monitor, Smartphone, TrendingUp, BarChart3, AlertCircle, Calendar, ChevronDown, Plus, Wifi, Trash2, Edit, Eye, GripVertical, Settings2, TrendingDown, X, Loader2, RefreshCw, Download, Puzzle, ExternalLink, Link2, Image as ImageIcon, BookOpen, Shield, Hash, Upload, RefreshCcw, Wand2, Sparkles, Palette, ShoppingBag, Layout } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Settings, FileText, Tag, Folder, Save, CheckCircle2, CheckSquare, MoreHorizontal, Filter, Search, Globe, AlertTriangle, Monitor, Smartphone, TrendingUp, BarChart3, AlertCircle, Calendar, ChevronDown, Plus, Wifi, Trash2, Edit, Eye, GripVertical, Settings2, TrendingDown, X, Loader2, RefreshCw, Download, Puzzle, ExternalLink, Link2, Image as ImageIcon, BookOpen, Shield, Hash, Upload, RefreshCcw, Wand2, Sparkles, Palette, ShoppingBag, Layout, ArrowRightLeft, Swords } from 'lucide-react';
 import { useSite, useUpdateSite, useDeleteSite } from '@/hooks/useSites';
 import { useArticles, useCreateArticle, usePublishArticleToWordPress } from '@/hooks/useArticles';
 import { useSyncPosts, usePosts } from '@/hooks/usePosts';
@@ -9,16 +10,16 @@ import { useToast } from '@/lib/contexts/ToastContext';
 import { useCore } from '@/lib/contexts/CoreContext';
 import { useQueryClient } from '@tanstack/react-query';
 import PublishModal from './PublishModal';
-import ArticleEditor from './ArticleEditor';
 import SEOScoreIndicator from './SEOScoreIndicator';
 import AIGeneratePopover from './AIGeneratePopover';
+import RedirectManager from './modules/redirects/RedirectManager';
 
 interface SiteDetailsProps {
     siteId: string;
     onBack: () => void;
 }
 
-type Tab = 'content' | 'categories' | 'tags' | 'settings';
+type Tab = 'overview' | 'content' | 'categories' | 'tags' | 'redirects' | 'settings';
 type ContentFilter = 'all' | 'wordpress' | 'generated';
 
 // Unified content item that merges Post and ArticleRecord
@@ -104,7 +105,7 @@ function getAvailableColumns(modules: { rm: boolean; nana: boolean }): ColumnDef
 
 // Character count color helper
 function charCountColor(current: number, max: number): string {
-    if (current === 0) return 'text-gray-300';
+    if (current === 0) return 'text-gray-400';
     if (current > max) return 'text-rose-500';
     if (current > max * 0.9) return 'text-amber-500';
     return 'text-gray-400';
@@ -114,7 +115,8 @@ type StatusTab = 'all' | 'unoptimized' | 'pending-sync' | 'drafts';
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
 const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
-    const [activeTab, setActiveTab] = useState<Tab>('content');
+    const router = useRouter();
+    const [activeTab, setActiveTab] = useState<Tab>('overview');
     const [contentFilter, setContentFilter] = useState<ContentFilter>('all');
 
     // Fetch site data
@@ -176,11 +178,6 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
     // Publish Modal State
     const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
     const [articleToPublish, setArticleToPublish] = useState<ArticleRecord | null>(null);
-
-    // Article Editor State
-    const [editingArticle, setEditingArticle] = useState<ArticleRecord | null>(null);
-    // Track if we're editing a WP post (from posts table) vs a local article (from generated_articles)
-    const [editingWPPostId, setEditingWPPostId] = useState<string | null>(null);
 
     // Categories & Tags State
     const [wpCategories, setWpCategories] = useState<Array<{id: number; name: string; slug: string; count: number}>>([]);
@@ -372,7 +369,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
         let success = 0;
         for (const item of items) {
             try {
-                const postId = item.source === 'wordpress' ? item.id : item.originalArticle?.id;
+                const postId = item.id.replace(/^(wp-|gen-)/, '');
                 if (!postId) continue;
                 const res = await fetch('/api/ai-writer/generate-title', {
                     method: 'POST',
@@ -404,7 +401,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
         let success = 0;
         for (const item of items) {
             try {
-                const postId = item.source === 'wordpress' ? item.id : item.originalArticle?.id;
+                const postId = item.id.replace(/^(wp-|gen-)/, '');
                 if (!postId) continue;
                 const res = await fetch('/api/ai-writer/generate-description', {
                     method: 'POST',
@@ -882,35 +879,63 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
         );
     }
 
-    const renderTabs = () => (
-        <div className="flex space-x-1 border-b border-gray-200 mb-6 mt-8">
-            <button
-                onClick={() => setActiveTab('content')}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'content' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-            >
-                <FileText size={16} /> Content
-                <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-bold">
-                    {contentItems.length}
-                </span>
-            </button>
-            <button
-                onClick={() => setActiveTab('categories')}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'categories' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-            >
-                <Folder size={16} /> Categories
-            </button>
-            <button
-                onClick={() => setActiveTab('tags')}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'tags' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-            >
-                <Tag size={16} /> Tags
-            </button>
-            <button
-                onClick={() => setActiveTab('settings')}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'settings' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-            >
-                <Settings size={16} /> Settings
-            </button>
+    const isCompetitor = !!site.is_competitor;
+
+    const tabItems: { id: string; label: string; count?: number }[] = isCompetitor
+        ? [
+            { id: 'overview', label: 'Overview' },
+            { id: 'content', label: 'Content', count: contentItems.length },
+          ]
+        : [
+            { id: 'overview', label: 'Overview' },
+            { id: 'content', label: 'Content', count: contentItems.length },
+            { id: 'categories', label: 'Categories' },
+            { id: 'tags', label: 'Tags' },
+            { id: 'redirects', label: 'Redirects' },
+            { id: 'settings', label: 'Settings' },
+          ];
+
+    const SITE_NAV_TILES: { id: Tab; label: string; icon: React.ElementType; iconBg: string; description: string }[] = isCompetitor
+        ? [
+            { id: 'content', label: 'Content', icon: FileText, iconBg: 'bg-blue-50 text-blue-600', description: `${contentItems.length} pages` },
+          ]
+        : [
+            { id: 'content', label: 'Content', icon: FileText, iconBg: 'bg-blue-50 text-blue-600', description: `${contentItems.length} pages` },
+            { id: 'categories', label: 'Categories', icon: Folder, iconBg: 'bg-violet-50 text-violet-600', description: 'WordPress categories' },
+            { id: 'tags', label: 'Tags', icon: Tag, iconBg: 'bg-emerald-50 text-emerald-600', description: 'WordPress tags' },
+            { id: 'redirects', label: 'Redirects', icon: ArrowRightLeft, iconBg: 'bg-orange-50 text-orange-600', description: 'Redirect rules' },
+            { id: 'settings', label: 'Settings', icon: Settings, iconBg: 'bg-gray-100 text-gray-600', description: 'Connection & config' },
+          ];
+
+    const renderOverview = () => (
+        <div className="animate-fade-in">
+            {/* Metrics */}
+            <div className="p-6 md:p-8">
+                {renderMetrics()}
+            </div>
+
+            {/* Navigation Tiles */}
+            <div className="px-6 md:px-8 pb-8">
+                <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Quick Navigation</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                    {SITE_NAV_TILES.map(tile => {
+                        const TileIcon = tile.icon;
+                        return (
+                            <button
+                                key={tile.id}
+                                onClick={() => setActiveTab(tile.id)}
+                                className="group bg-white rounded-2xl border border-gray-200 shadow-sm p-5 text-left hover:shadow-md hover:border-gray-300 transition-all"
+                            >
+                                <div className={`w-10 h-10 rounded-xl ${tile.iconBg} flex items-center justify-center mb-3`}>
+                                    <TileIcon size={20} />
+                                </div>
+                                <p className="text-sm font-bold text-gray-900 group-hover:text-indigo-600 transition-colors">{tile.label}</p>
+                                <p className="text-xs text-gray-400 mt-0.5">{tile.description}</p>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
         </div>
     );
 
@@ -1053,184 +1078,11 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
 
     // Article Editor Handlers
     const handleEditArticle = (article: ArticleRecord) => {
-        setEditingWPPostId(null);
-        setEditingArticle(article);
+        router.push(`/editor/${article.id}?siteId=${siteId}&source=generated`);
     };
 
     const handleEditWPPost = (post: any) => {
-        // Convert WP post to ArticleEditor-compatible format
-        const articleCompat: ArticleRecord = {
-            id: post.id,
-            site_id: post.site_id,
-            keyword: post.focus_keyword || '',
-            title: post.title,
-            seo_title: post.seo_title,
-            seo_description: post.seo_description,
-            content: post.content,
-            word_count: post.word_count,
-            status: post.status,
-            wp_post_id: post.wp_post_id,
-            created_at: post.created_at,
-            published_at: post.published_at,
-            seo_score: post.seo_score,
-            canonical_url: post.canonical_url,
-            robots_meta: post.robots_meta,
-            og_title: post.og_title,
-            og_description: post.og_description,
-            og_image_url: post.og_image_url,
-            twitter_title: post.twitter_title,
-            twitter_description: post.twitter_description,
-            twitter_image_url: post.twitter_image_url,
-            twitter_card_type: post.twitter_card_type,
-            schema_article_type: post.schema_article_type,
-            additional_keywords: post.additional_keywords,
-            readability_score: post.readability_score,
-            content_ai_score: post.content_ai_score,
-            internal_links_count: post.internal_links_count,
-            external_links_count: post.external_links_count,
-            images_count: post.images_count,
-            images_alt_count: post.images_alt_count,
-        };
-        setEditingWPPostId(post.id);
-        setEditingArticle(articleCompat);
-    };
-
-    const handleCloseEditor = () => {
-        setEditingArticle(null);
-        setEditingWPPostId(null);
-    };
-
-    const handleSaveArticleFromEditor = async (updates: any) => {
-        if (!editingArticle) return;
-
-        try {
-            // Use different API endpoint depending on whether this is a WP post or local article
-            const apiUrl = editingWPPostId
-                ? `/api/posts/${editingWPPostId}`
-                : `/api/articles/${editingArticle.id}`;
-
-            const response = await fetch(apiUrl, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(updates),
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                toast.success('Saved!');
-                setEditingArticle({ ...editingArticle, ...updates });
-                // Invalidate both queries to refresh the table
-                queryClient.invalidateQueries({ queryKey: ['articles'] });
-                queryClient.invalidateQueries({ queryKey: ['posts'] });
-            } else {
-                const errMsg = result.error || 'Failed to save';
-                toast.error(errMsg);
-                throw new Error(errMsg);
-            }
-        } catch (error) {
-            if (!(error instanceof Error && error.message.includes('Failed'))) {
-                toast.error(`Save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-            }
-            throw error;
-        }
-    };
-
-    const handlePublishFromEditor = async (categoryIds: number[], tagIds: number[]) => {
-        if (!editingArticle || !site) return;
-
-        try {
-            // Create version backup before publishing
-            try {
-                await fetch('/api/versions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        articleId: editingWPPostId ? undefined : editingArticle.id,
-                        postId: editingWPPostId || undefined,
-                        siteId: site.id,
-                        label: 'Before publish to WordPress',
-                    }),
-                });
-            } catch (vErr) {
-                console.error('Pre-publish version creation failed (non-blocking):', vErr);
-            }
-
-            // Use different publish endpoint for WP posts vs local articles
-            const apiUrl = editingWPPostId
-                ? `/api/posts/${editingWPPostId}/publish`
-                : `/api/articles/${editingArticle.id}/publish`;
-
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    siteId: site.id,
-                    categoryIds,
-                    tagIds,
-                }),
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                toast.success(result.isUpdate
-                    ? `Updated in WordPress! ${result.wpUrl || ''}`
-                    : `Published! ${result.wpUrl || ''}`
-                );
-                handleCloseEditor();
-                queryClient.invalidateQueries({ queryKey: ['articles'] });
-                queryClient.invalidateQueries({ queryKey: ['posts'] });
-            } else {
-                toast.error(result.message);
-            }
-        } catch (error) {
-            toast.error(`Publish failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-    };
-
-    const handleAnalyzeFromEditor = async () => {
-        if (!editingArticle) return null;
-
-        try {
-            // Send article data in the body so the analyze endpoint works
-            // regardless of whether this is a WP post or local article
-            const response = await fetch(`/api/articles/${editingArticle.id}/analyze`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title: editingArticle.title,
-                    content: editingArticle.content,
-                    keyword: editingArticle.keyword,
-                    seo_title: editingArticle.seo_title,
-                    seo_description: editingArticle.seo_description,
-                    focus_keyword: editingArticle.keyword,
-                    word_count: editingArticle.word_count,
-                    readability_score: editingArticle.readability_score,
-                    images_count: editingArticle.images_count,
-                    images_alt_count: editingArticle.images_alt_count,
-                    internal_links_count: editingArticle.internal_links_count,
-                    external_links_count: editingArticle.external_links_count,
-                }),
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                toast.success(`SEO Score: ${result.analysis.score}/100`);
-                return result.analysis;
-            } else {
-                toast.error(result.error || 'Failed to analyze article');
-                return null;
-            }
-        } catch (error) {
-            toast.error(`Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-            return null;
-        }
+        router.push(`/editor/${post.id}?siteId=${siteId}&source=wordpress`);
     };
 
     // Create new post handler
@@ -1251,7 +1103,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
             setNewArticleKeyword('');
             setNewArticleTitle('');
             queryClient.invalidateQueries({ queryKey: ['articles'] });
-            setEditingArticle(newArticle);
+            router.push(`/editor/${newArticle.id}?siteId=${siteId}&source=generated`);
         } catch (error) {
             toast.error(`Failed to create article: ${error instanceof Error ? error.message : 'Unknown error'}`);
         } finally {
@@ -1280,6 +1132,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
             if (result.success) {
                 toast.success(`SEO Score: ${result.analysis.score}/100`);
                 queryClient.invalidateQueries({ queryKey: ['articles'] });
+                queryClient.invalidateQueries({ queryKey: ['posts'] });
             } else {
                 toast.error('Failed to analyze article');
             }
@@ -1351,8 +1204,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        articleId: editingWPPostId ? undefined : articleToPublish.id,
-                        postId: editingWPPostId || undefined,
+                        articleId: articleToPublish.id,
                         siteId: site.id,
                         label: 'Before publish to WordPress',
                     }),
@@ -1361,10 +1213,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                 console.error('Pre-publish version creation failed (non-blocking):', vErr);
             }
 
-            // Route to correct API depending on whether this is a WP post or local article
-            const apiUrl = editingWPPostId
-                ? `/api/posts/${editingWPPostId}/publish`
-                : `/api/articles/${articleToPublish.id}/publish`;
+            const apiUrl = `/api/articles/${articleToPublish.id}/publish`;
 
             const response = await fetch(apiUrl, {
                 method: 'POST',
@@ -1387,7 +1236,6 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                 );
                 setIsPublishModalOpen(false);
                 setArticleToPublish(null);
-                setEditingWPPostId(null);
                 queryClient.invalidateQueries({ queryKey: ['articles'] });
                 queryClient.invalidateQueries({ queryKey: ['posts'] });
             } else {
@@ -1485,13 +1333,13 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                 updateSeoEdit(item.id, 'slug', `/${v}/`);
                             }}
                             placeholder="page-slug"
-                            className="w-full border border-gray-100 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 rounded-lg text-xs text-gray-700 px-2 py-1.5 placeholder:text-gray-300 bg-white transition-all"
+                            className="w-full border border-gray-100 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 rounded-lg text-xs text-gray-700 px-2 py-1.5 placeholder:text-gray-400 bg-white transition-all"
                         />
                         <span className="text-xs text-gray-400 mt-1.5 flex-shrink-0">/</span>
                     </div>
                     <div className="mt-1 text-right">
                         <span className={`text-[10px] font-medium ${
-                            slugLen === 0 ? 'text-gray-300' : slugLen > 75 ? 'text-rose-500' : slugLen > 60 ? 'text-amber-500' : 'text-gray-400'
+                            slugLen === 0 ? 'text-gray-400' : slugLen > 75 ? 'text-rose-500' : slugLen > 60 ? 'text-amber-500' : 'text-gray-400'
                         }`}>
                             {slugLen > 75 ? 'Too long' : slugLen > 60 ? 'Consider shorter' : slugLen > 0 ? 'Good' : ''}
                         </span>
@@ -1501,10 +1349,85 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
         };
 
         return (
-            <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm flex flex-col">
-                {/* Toolbar */}
-                <div className="px-6 py-3 border-b border-gray-100">
-                    <div className="flex items-center justify-end">
+            <div className="bg-white border-t border-gray-200 overflow-hidden flex flex-col min-h-0">
+                {/* Sticky Filter Bar */}
+                <div className="sticky top-0 z-10 bg-white">
+
+                {/* Status Tabs */}
+                <div className="px-6 border-b border-gray-200 bg-white">
+                    <div className="flex gap-6 pt-6">
+                        {(isCompetitor
+                            ? [{ id: 'all' as StatusTab, label: 'All Pages', count: statusCounts.all }]
+                            : [
+                                { id: 'all' as StatusTab, label: 'All Pages', count: statusCounts.all },
+                                { id: 'unoptimized' as StatusTab, label: 'Unoptimized', count: statusCounts.unoptimized },
+                                { id: 'pending-sync' as StatusTab, label: 'Pending Sync', count: statusCounts['pending-sync'] },
+                                { id: 'drafts' as StatusTab, label: 'Drafts', count: statusCounts.drafts },
+                              ]
+                        ).map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setStatusTab(tab.id)}
+                                className={`pb-3 text-sm font-semibold border-b-2 transition-colors ${
+                                    statusTab === tab.id
+                                        ? 'border-indigo-600 text-indigo-600'
+                                        : 'border-transparent text-gray-500 hover:text-gray-800'
+                                }`}
+                            >
+                                {tab.label}
+                                <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-bold ${
+                                    statusTab === tab.id ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-100 text-gray-500'
+                                }`}>
+                                    {tab.count}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Unsaved Changes Save Bar — above table */}
+                {changedItemIds.length > 0 && (
+                    <div className="px-6 py-3 border-b border-amber-200 bg-amber-50 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5 text-sm text-amber-700">
+                            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+                            {changedItemIds.length} unsaved change{changedItemIds.length !== 1 ? 's' : ''}
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={discardSeoEdits}
+                                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-amber-100 rounded-lg transition-colors"
+                            >
+                                Discard
+                            </button>
+                            <button
+                                onClick={saveSeoEdits}
+                                disabled={isSavingEdits}
+                                className="px-5 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {isSavingEdits ? (
+                                    <><Loader2 size={14} className="animate-spin" /> Saving...</>
+                                ) : (
+                                    <><Save size={14} /> Save Changes</>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Search + Actions bar */}
+                <div className="px-6 py-3 border-b border-gray-200 bg-white">
+                    <div className="flex items-center gap-3">
+                        <div className="relative flex-1 max-w-sm">
+                            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                                type="text"
+                                value={contentSearch}
+                                onChange={e => setContentSearch(e.target.value)}
+                                placeholder="Search by title, keyword, or SEO title..."
+                                className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
+                            />
+                        </div>
+                        <div className="flex-1" />
                         <div className="flex items-center gap-3">
                             {/* Column customizer */}
                             <div className="relative">
@@ -1581,139 +1504,73 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                 <Download size={16} />
                                 Export CSV
                             </button>
-                            {/* Bulk Actions */}
-                            {selectedIds.size > 0 ? (
-                                <div className="relative">
+                            {/* Bulk Actions or New Post — hidden for competitors */}
+                            {!isCompetitor && (
+                                selectedIds.size > 0 ? (
+                                    <div className="relative">
+                                        <button
+                                            onClick={() => setShowBulkStatusDropdown(!showBulkStatusDropdown)}
+                                            className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors shadow-sm"
+                                        >
+                                            <CheckSquare size={16} />
+                                            Bulk Actions ({selectedIds.size})
+                                            <ChevronDown size={14} />
+                                        </button>
+                                        {showBulkStatusDropdown && (
+                                            <div className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-xl py-1 z-30 min-w-[180px]">
+                                                {bulkProcessing ? (
+                                                    <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-500">
+                                                        <Loader2 size={14} className="animate-spin" />
+                                                        {bulkProgress.current}/{bulkProgress.total}
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <p className="px-4 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Change Status</p>
+                                                        {['draft', 'reviewed', 'published'].map(s => (
+                                                            <button key={s} onClick={() => handleBulkStatusChange(s)} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 capitalize">{s}</button>
+                                                        ))}
+                                                        <div className="border-t border-gray-100 my-1" />
+                                                        <button onClick={handleBulkPublish} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Upload size={14} /> Sync to WordPress</button>
+                                                        {nanaBananaEnabled && (
+                                                            <button onClick={handleBulkGenerateCovers} className="w-full text-left px-4 py-2 text-sm text-yellow-700 hover:bg-yellow-50 flex items-center gap-2"><Wand2 size={14} /> Generate Covers</button>
+                                                        )}
+                                                        {aiWriterEnabled && (
+                                                            <>
+                                                                <div className="border-t border-gray-100 my-1" />
+                                                                <p className="px-4 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">AI Writer</p>
+                                                                <button onClick={handleBulkGenerateTitles} className="w-full text-left px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-2"><Sparkles size={14} /> Generate Titles</button>
+                                                                <button onClick={handleBulkGenerateDescriptions} className="w-full text-left px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-2"><Sparkles size={14} /> Generate Descriptions</button>
+                                                            </>
+                                                        )}
+                                                        <div className="border-t border-gray-100 my-1" />
+                                                        <button onClick={handleBulkDelete} className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50 flex items-center gap-2"><Trash2 size={14} /> Delete</button>
+                                                        <div className="border-t border-gray-100 my-1" />
+                                                        <button onClick={() => setSelectedIds(new Set())} className="w-full text-left px-4 py-2 text-sm text-gray-500 hover:bg-gray-50">Deselect All</button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
                                     <button
-                                        onClick={() => setShowBulkStatusDropdown(!showBulkStatusDropdown)}
+                                        onClick={() => setShowNewArticleDialog(true)}
                                         className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors shadow-sm"
                                     >
-                                        <CheckSquare size={16} />
-                                        Bulk Actions ({selectedIds.size})
-                                        <ChevronDown size={14} />
+                                        <Plus size={16} />
+                                        New Post
                                     </button>
-                                    {showBulkStatusDropdown && (
-                                        <div className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-xl py-1 z-30 min-w-[180px]">
-                                            {bulkProcessing ? (
-                                                <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-500">
-                                                    <Loader2 size={14} className="animate-spin" />
-                                                    {bulkProgress.current}/{bulkProgress.total}
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <p className="px-4 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Change Status</p>
-                                                    {['draft', 'reviewed', 'published'].map(s => (
-                                                        <button key={s} onClick={() => handleBulkStatusChange(s)} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 capitalize">{s}</button>
-                                                    ))}
-                                                    <div className="border-t border-gray-100 my-1" />
-                                                    <button onClick={handleBulkPublish} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Upload size={14} /> Sync to WordPress</button>
-                                                    {nanaBananaEnabled && (
-                                                        <button onClick={handleBulkGenerateCovers} className="w-full text-left px-4 py-2 text-sm text-yellow-700 hover:bg-yellow-50 flex items-center gap-2"><Wand2 size={14} /> Generate Covers</button>
-                                                    )}
-                                                    {aiWriterEnabled && (
-                                                        <>
-                                                            <div className="border-t border-gray-100 my-1" />
-                                                            <p className="px-4 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">AI Writer</p>
-                                                            <button onClick={handleBulkGenerateTitles} className="w-full text-left px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-2"><Sparkles size={14} /> Generate Titles</button>
-                                                            <button onClick={handleBulkGenerateDescriptions} className="w-full text-left px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-2"><Sparkles size={14} /> Generate Descriptions</button>
-                                                        </>
-                                                    )}
-                                                    <div className="border-t border-gray-100 my-1" />
-                                                    <button onClick={handleBulkDelete} className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50 flex items-center gap-2"><Trash2 size={14} /> Delete</button>
-                                                    <div className="border-t border-gray-100 my-1" />
-                                                    <button onClick={() => setSelectedIds(new Set())} className="w-full text-left px-4 py-2 text-sm text-gray-500 hover:bg-gray-50">Deselect All</button>
-                                                </>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            ) : (
-                                <button
-                                    onClick={() => setShowNewArticleDialog(true)}
-                                    className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors shadow-sm"
-                                >
-                                    <Plus size={16} />
-                                    New Post
-                                </button>
+                                )
                             )}
                         </div>
                     </div>
                 </div>
-
-                {/* Status Tabs */}
-                <div className="px-6 border-b border-gray-100">
-                    <div className="flex gap-8 pt-1">
-                        {([
-                            { id: 'all' as StatusTab, label: 'All Pages', count: statusCounts.all },
-                            { id: 'unoptimized' as StatusTab, label: 'Unoptimized', count: statusCounts.unoptimized },
-                            { id: 'pending-sync' as StatusTab, label: 'Pending Sync', count: statusCounts['pending-sync'] },
-                            { id: 'drafts' as StatusTab, label: 'Drafts', count: statusCounts.drafts },
-                        ]).map(tab => (
-                            <button
-                                key={tab.id}
-                                onClick={() => setStatusTab(tab.id)}
-                                className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
-                                    statusTab === tab.id
-                                        ? 'border-indigo-600 text-indigo-600'
-                                        : 'border-transparent text-gray-400 hover:text-gray-600'
-                                }`}
-                            >
-                                {tab.label} ({tab.count})
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Unsaved Changes Save Bar — above table */}
-                {changedItemIds.length > 0 && (
-                    <div className="px-6 py-3 border-b border-amber-200 bg-amber-50 flex items-center justify-between">
-                        <div className="flex items-center gap-2.5 text-sm text-amber-700">
-                            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-                            {changedItemIds.length} unsaved change{changedItemIds.length !== 1 ? 's' : ''}
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <button
-                                onClick={discardSeoEdits}
-                                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-amber-100 rounded-lg transition-colors"
-                            >
-                                Discard
-                            </button>
-                            <button
-                                onClick={saveSeoEdits}
-                                disabled={isSavingEdits}
-                                className="px-5 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
-                            >
-                                {isSavingEdits ? (
-                                    <><Loader2 size={14} className="animate-spin" /> Saving...</>
-                                ) : (
-                                    <><Save size={14} /> Save Changes</>
-                                )}
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                {/* Search bar */}
-                {filteredContent.length > 0 && (
-                    <div className="px-6 py-3 border-b border-gray-50 bg-gray-50/30">
-                        <div className="relative max-w-sm">
-                            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                            <input
-                                type="text"
-                                value={contentSearch}
-                                onChange={e => setContentSearch(e.target.value)}
-                                placeholder="Search by title, keyword, or SEO title..."
-                                className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
-                            />
-                        </div>
-                    </div>
-                )}
+                </div>{/* end sticky filter bar */}
 
                 {/* Table */}
-                <div className="overflow-auto flex-1">
+                <div className="overflow-x-auto flex-1">
                     <table className="w-full">
-                        <thead className="sticky top-0 z-10">
-                            <tr className="bg-gray-50/80 border-b border-gray-100">
+                        <thead>
+                            <tr className="bg-gray-50 border-b border-gray-200">
                                 <th className="px-6 py-3.5 w-12">
                                     <input
                                         type="checkbox"
@@ -1739,12 +1596,12 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                             onDragStart={() => handleDragStart(columnId)}
                                             onDragOver={(e) => handleDragOver(e, columnId)}
                                             onDragEnd={handleDragEnd}
-                                            className={`px-6 py-3.5 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-move whitespace-nowrap select-none group ${
+                                            className={`px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider cursor-move whitespace-nowrap select-none group ${
                                                 draggedColumn === columnId ? 'opacity-50 bg-indigo-50' : ''
                                             }`}
                                         >
                                             <div className="flex items-center gap-1.5">
-                                                <GripVertical size={12} className="text-gray-300 group-hover:text-gray-500 transition-colors flex-shrink-0" />
+                                                <GripVertical size={12} className="text-gray-400 group-hover:text-gray-500 transition-colors flex-shrink-0" />
                                                 {headerLabel}
                                             </div>
                                         </th>
@@ -1752,7 +1609,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                 })}
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="bg-[#f9f9f9]">
                             {/* Select-all-pages banner */}
                             {!isLoading && paginatedItems.length > 0 && paginatedItems.every(item => selectedIds.has(item.id)) && selectedIds.size < filteredContent.length && (
                                 <tr>
@@ -1787,7 +1644,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                 <tr>
                                     <td colSpan={visibleColumns.length + 1} className="px-6 py-16 text-center text-gray-500">
                                         <div className="text-center space-y-3">
-                                            <FileText size={36} className="text-gray-300 mx-auto" />
+                                            <FileText size={36} className="text-gray-400 mx-auto" />
                                             <div>
                                                 <p className="font-medium text-gray-600">
                                                     {contentFilter === 'wordpress' ? 'No WordPress posts' :
@@ -1833,13 +1690,13 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                         </td>
                                                     );
                                                 case 'keyword':
-                                                    return <td key={colId} className="px-6 py-5 align-top">{item.keyword ? <span className="text-xs text-gray-600">{item.keyword}</span> : <span className="text-xs text-gray-300">—</span>}</td>;
+                                                    return <td key={colId} className="px-6 py-5 align-top">{item.keyword ? <span className="text-xs text-gray-600">{item.keyword}</span> : <span className="text-xs text-gray-400">—</span>}</td>;
                                                 case 'seo_score':
                                                     return (
                                                         <td key={colId} className="px-6 py-5 align-top">
                                                             {item.seo_score !== null || item.preliminary_seo_score ? (
                                                                 <SEOScoreIndicator score={item.seo_score || item.preliminary_seo_score || 0} size="sm" />
-                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                            ) : <span className="text-xs text-gray-400">—</span>}
                                                         </td>
                                                     );
                                                 case 'seo_title': {
@@ -1848,11 +1705,11 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                         <td key={colId} className="px-5 py-4 align-top">
                                                             <div className="min-w-[320px]">
                                                                 <div className="flex items-start gap-1.5">
-                                                                    <textarea rows={2} value={getSeoEditValue(item.id, 'seo_title', item.seo_title)} onChange={e => updateSeoEdit(item.id, 'seo_title', e.target.value)} placeholder="Enter SEO title..." className="w-full border border-gray-100 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 rounded-lg text-sm text-gray-800 resize-none p-2.5 placeholder:text-gray-300 bg-white transition-all" />
+                                                                    <textarea rows={2} value={getSeoEditValue(item.id, 'seo_title', item.seo_title)} onChange={e => updateSeoEdit(item.id, 'seo_title', e.target.value)} placeholder="Enter SEO title..." className="w-full border border-gray-100 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 rounded-lg text-sm text-gray-800 resize-none p-2.5 placeholder:text-gray-400 bg-white transition-all" />
                                                                     {aiWriterEnabled && (
                                                                         <AIGeneratePopover
                                                                             type="title"
-                                                                            postId={item.id}
+                                                                            postId={item.id.replace(/^(wp-|gen-)/, '')}
                                                                             siteId={siteId}
                                                                             keyword={item.keyword || undefined}
                                                                             onApply={(value) => updateSeoEdit(item.id, 'seo_title', value)}
@@ -1860,7 +1717,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                                     )}
                                                                 </div>
                                                                 <div className="mt-1 text-left">
-                                                                    <span className={`text-xs font-medium ${titleLen === 0 ? 'text-gray-300' : titleLen > 60 ? 'text-rose-500' : titleLen >= 50 ? 'text-emerald-500' : 'text-gray-400'}`}>{titleLen} / 60</span>
+                                                                    <span className={`text-xs font-medium ${titleLen === 0 ? 'text-gray-400' : titleLen > 60 ? 'text-rose-500' : titleLen >= 50 ? 'text-emerald-500' : 'text-gray-400'}`}>{titleLen} / 60</span>
                                                                 </div>
                                                             </div>
                                                         </td>
@@ -1872,11 +1729,11 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                         <td key={colId} className="px-5 py-4 align-top">
                                                             <div className="min-w-[460px]">
                                                                 <div className="flex items-start gap-1.5">
-                                                                    <textarea rows={3} value={getSeoEditValue(item.id, 'seo_description', item.seo_description)} onChange={e => updateSeoEdit(item.id, 'seo_description', e.target.value)} placeholder="Enter meta description..." className="w-full border border-gray-100 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 rounded-lg text-sm text-gray-800 resize-none p-2.5 placeholder:text-gray-300 bg-white transition-all" />
+                                                                    <textarea rows={3} value={getSeoEditValue(item.id, 'seo_description', item.seo_description)} onChange={e => updateSeoEdit(item.id, 'seo_description', e.target.value)} placeholder="Enter meta description..." className="w-full border border-gray-100 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 rounded-lg text-sm text-gray-800 resize-none p-2.5 placeholder:text-gray-400 bg-white transition-all" />
                                                                     {aiWriterEnabled && (
                                                                         <AIGeneratePopover
                                                                             type="description"
-                                                                            postId={item.id}
+                                                                            postId={item.id.replace(/^(wp-|gen-)/, '')}
                                                                             siteId={siteId}
                                                                             keyword={item.keyword || undefined}
                                                                             onApply={(value) => updateSeoEdit(item.id, 'seo_description', value)}
@@ -1884,7 +1741,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                                     )}
                                                                 </div>
                                                                 <div className="mt-1 text-left">
-                                                                    <span className={`text-xs font-medium ${descLen === 0 ? 'text-gray-300' : descLen > 160 ? 'text-rose-500' : descLen >= 140 ? 'text-emerald-500' : 'text-gray-400'}`}>{descLen} / 160</span>
+                                                                    <span className={`text-xs font-medium ${descLen === 0 ? 'text-gray-400' : descLen > 160 ? 'text-rose-500' : descLen >= 140 ? 'text-emerald-500' : 'text-gray-400'}`}>{descLen} / 160</span>
                                                                 </div>
                                                             </div>
                                                         </td>
@@ -1898,7 +1755,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                                     <div className={`w-2 h-2 rounded-full ${item.readability_score >= 80 ? 'bg-emerald-500' : item.readability_score >= 50 ? 'bg-amber-500' : 'bg-rose-500'}`} />
                                                                     <span className={`text-xs font-bold ${item.readability_score >= 80 ? 'text-emerald-700' : item.readability_score >= 50 ? 'text-amber-700' : 'text-rose-700'}`}>{item.readability_score}</span>
                                                                 </div>
-                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                            ) : <span className="text-xs text-gray-400">—</span>}
                                                         </td>
                                                     );
                                                 case 'word_count':
@@ -1909,10 +1766,10 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                             {(item.internal_links_count != null || item.external_links_count != null) ? (
                                                                 <div className="flex items-center gap-2 text-xs">
                                                                     <span className="text-blue-600" title="Internal"><Link2 size={11} className="inline" /> {item.internal_links_count ?? 0}</span>
-                                                                    <span className="text-gray-300">/</span>
+                                                                    <span className="text-gray-400">/</span>
                                                                     <span className="text-orange-600" title="External"><ExternalLink size={11} className="inline" /> {item.external_links_count ?? 0}</span>
                                                                 </div>
-                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                            ) : <span className="text-xs text-gray-400">—</span>}
                                                         </td>
                                                     );
                                                 case 'images':
@@ -1924,7 +1781,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                                     <span className="text-gray-700">{item.images_count}</span>
                                                                     {item.images_count > 0 && <span className={`text-[10px] ${item.images_alt_count === item.images_count ? 'text-emerald-600' : 'text-amber-600'}`}>({item.images_alt_count ?? 0} alt)</span>}
                                                                 </div>
-                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                            ) : <span className="text-xs text-gray-400">—</span>}
                                                         </td>
                                                     );
                                                 case 'robots':
@@ -1932,7 +1789,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                         <td key={colId} className="px-6 py-5 align-top">
                                                             {item.robots_meta ? (
                                                                 <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${item.robots_meta.includes('noindex') ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}><Shield size={10} />{item.robots_meta.includes('noindex') ? 'noindex' : 'index'}</span>
-                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                            ) : <span className="text-xs text-gray-400">—</span>}
                                                         </td>
                                                     );
                                                 case 'schema_type':
@@ -1940,7 +1797,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                         <td key={colId} className="px-6 py-5 align-top">
                                                             {item.schema_article_type ? (
                                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-violet-50 text-violet-700"><Hash size={10} />{item.schema_article_type}</span>
-                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                            ) : <span className="text-xs text-gray-400">—</span>}
                                                         </td>
                                                     );
                                                 case 'canonical':
@@ -1950,7 +1807,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                                 <a href={item.canonical_url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline truncate max-w-[150px] block" title={item.canonical_url}>
                                                                     {(() => { try { return new URL(item.canonical_url).pathname; } catch { return item.canonical_url; } })()}
                                                                 </a>
-                                                            ) : <span className="text-xs text-gray-300">—</span>}
+                                                            ) : <span className="text-xs text-gray-400">—</span>}
                                                         </td>
                                                     );
                                                 case 'serp_preview':
@@ -1966,7 +1823,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                 case 'og_title':
                                                     return (
                                                         <td key={colId} className="px-6 py-5 align-top">
-                                                            {item.og_title ? <p className="text-xs text-gray-700 truncate max-w-[180px]" title={item.og_title}>{item.og_title}</p> : <span className="text-xs text-gray-300">—</span>}
+                                                            {item.og_title ? <p className="text-xs text-gray-700 truncate max-w-[180px]" title={item.og_title}>{item.og_title}</p> : <span className="text-xs text-gray-400">—</span>}
                                                         </td>
                                                     );
                                                 case 'cover':
@@ -1986,7 +1843,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                 case 'published_at':
                                                     return (
                                                         <td key={colId} className="px-6 py-5 align-top text-xs text-gray-500">
-                                                            {item.published_at ? new Date(item.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : <span className="text-gray-300">—</span>}
+                                                            {item.published_at ? new Date(item.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : <span className="text-gray-400">—</span>}
                                                         </td>
                                                     );
                                                 case 'actions':
@@ -2000,7 +1857,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                                             onClick={() => {
                                                                                 if (!site?.wp_username || !site?.wp_app_password) { toast.warning('Configure WordPress credentials first'); return; }
                                                                                 const postAsArticle: ArticleRecord = { id: item.originalPost.id, site_id: item.originalPost.site_id, keyword: item.originalPost.focus_keyword || '', title: item.originalPost.title, seo_title: item.originalPost.seo_title, seo_description: item.originalPost.seo_description, content: item.originalPost.content, word_count: item.originalPost.word_count, status: item.originalPost.status, wp_post_id: item.originalPost.wp_post_id, created_at: item.originalPost.created_at, published_at: item.originalPost.published_at };
-                                                                                setArticleToPublish(postAsArticle); setEditingWPPostId(item.originalPost.id); setIsPublishModalOpen(true);
+                                                                                setArticleToPublish(postAsArticle); setIsPublishModalOpen(true);
                                                                             }}
                                                                             className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-600 transition-colors" title="Update in WordPress"
                                                                         ><RefreshCw size={15} /></button>
@@ -2027,7 +1884,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                         </td>
                                                     );
                                                 default:
-                                                    return <td key={colId} className="px-6 py-5 align-top text-xs text-gray-300">—</td>;
+                                                    return <td key={colId} className="px-6 py-5 align-top text-xs text-gray-400">—</td>;
                                             }
                                         })}
                                     </tr>
@@ -2674,54 +2531,71 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
     };
 
     return (
-        <div className="p-6 md:p-8 h-full overflow-y-auto bg-[#F5F5F7]">
-            {/* Header */}
-            <div className="flex flex-col space-y-6 mb-8">
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-4 bg-white p-1.5 rounded-lg border border-gray-200 w-fit shadow-sm">
-                        <button 
-                            onClick={onBack}
-                            className="p-1 hover:bg-gray-50 rounded-md text-gray-400 hover:text-gray-600 transition-all"
-                        >
-                            <ChevronLeft size={16} />
-                        </button>
-                        <div className="h-4 w-px bg-gray-300"></div>
-                        <div className="text-xs text-gray-500 flex items-center gap-1 px-2">
-                            <span className="cursor-pointer hover:text-gray-700" onClick={onBack}>Dashboard</span>
-                            <ChevronRight size={10} />
-                            <span className="font-semibold text-gray-900 truncate">{site.name}</span>
-                        </div>
+        <div className="h-full overflow-y-auto bg-[#F5F5F7]">
+            {/* Sticky Header + Tabs */}
+            <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
+                {/* Row 1: Navigation + Site Info */}
+                <div className="flex items-center gap-3 px-4 sm:px-6 lg:px-8 py-4">
+                    <button
+                        onClick={onBack}
+                        className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors"
+                    >
+                        <ChevronLeft size={16} />
+                        Back
+                    </button>
+                    <div className="h-5 w-px bg-gray-200" />
+                    <img src={site.favicon} alt={site.name} className="w-6 h-6 rounded-lg object-cover" />
+                    <div className="flex items-center gap-2 min-w-0">
+                        <h1 className="text-base font-bold text-gray-900 truncate">{site.name}</h1>
+                        {site.is_competitor && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-red-50 text-red-600 border border-red-100 flex-shrink-0">
+                                <Swords size={10} />
+                                Competitor
+                            </span>
+                        )}
+                        <a href={`https://${site.url}`} target="_blank" rel="noreferrer" className="text-xs text-gray-400 hover:text-blue-500 transition-colors truncate hidden sm:inline">{site.url}</a>
                     </div>
                 </div>
-                
-                <div className="flex items-center gap-4">
-                     <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center border border-gray-100 shrink-0 shadow-sm">
-                        <img src={site.favicon} alt={site.name} className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">{site.name}</h1>
-                        <a href={`https://${site.url}`} target="_blank" rel="noreferrer" className="text-sm text-gray-500 hover:text-indigo-600">{site.url}</a>
-                    </div>
+                {/* Row 2: Tab Bar */}
+                <div className="flex px-4 sm:px-6 lg:px-8 gap-1 overflow-x-auto">
+                    {tabItems.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id as any)}
+                            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                        >
+                            {tab.label}
+                            {tab.count !== undefined && (
+                                <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-bold ${activeTab === tab.id ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                                    {tab.count}
+                                </span>
+                            )}
+                        </button>
+                    ))}
                 </div>
             </div>
 
-            {/* Metrics Dashboard */}
-            {renderMetrics()}
+            {/* Overview — metrics + nav tiles */}
+            {activeTab === 'overview' && renderOverview()}
 
-            {/* Tabs */}
-            {renderTabs()}
-
-            {/* Content */}
+            {/* Content — full width, no side padding */}
             {activeTab === 'content' && (
                 <div className="animate-fade-in">
                     {renderContent()}
                 </div>
             )}
-            {activeTab !== 'content' && (
-                <div className="animate-fade-in bg-white rounded-[2rem] p-6 border border-gray-100 shadow-sm">
-                    {activeTab === 'categories' && renderCategoriesTab()}
-                    {activeTab === 'tags' && renderTagsTab()}
-                    {activeTab === 'settings' && renderSettings()}
+            {activeTab === 'redirects' && (
+                <div className="animate-fade-in px-6 md:px-8 pb-6">
+                    <RedirectManager siteId={siteId} />
+                </div>
+            )}
+            {activeTab !== 'content' && activeTab !== 'redirects' && activeTab !== 'overview' && (
+                <div className="animate-fade-in px-6 md:px-8 pb-6">
+                    <div className="bg-white rounded-[2rem] p-6 border border-gray-100 shadow-sm">
+                        {activeTab === 'categories' && renderCategoriesTab()}
+                        {activeTab === 'tags' && renderTagsTab()}
+                        {activeTab === 'settings' && renderSettings()}
+                    </div>
                 </div>
             )}
 
@@ -2803,22 +2677,6 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                 </div>
             )}
 
-            {/* Article Editor Modal */}
-            {editingArticle && (
-                <ArticleEditor
-                    article={editingArticle}
-                    onClose={() => {
-                        handleCloseEditor();
-                        queryClient.invalidateQueries({ queryKey: ['articles'] });
-                        queryClient.invalidateQueries({ queryKey: ['posts'] });
-                    }}
-                    onSave={handleSaveArticleFromEditor}
-                    onPublish={handlePublishFromEditor}
-                    onAnalyze={handleAnalyzeFromEditor}
-                    isWPPost={!!editingWPPostId}
-                    isNanaBananaEnabled={nanaBananaEnabled}
-                />
-            )}
         </div>
     );
 };

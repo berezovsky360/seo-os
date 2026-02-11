@@ -74,6 +74,23 @@
   animation: shimmer 2s infinite;
 }
 
+/* Sidebar workspace panel animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
 /* WordPress Block Columns — Editor Styles */
 #visual-editor .wp-block-columns {
   display: flex;

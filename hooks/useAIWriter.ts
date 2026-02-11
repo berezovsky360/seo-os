@@ -40,6 +40,7 @@ export function useGenerateTitle() {
       site_id: string
       persona_id?: string
       keyword?: string
+      tone?: string
     }) => apiFetch<TitleGenerationResult>('/api/ai-writer/generate-title', data),
   })
 }
@@ -51,6 +52,7 @@ export function useGenerateDescription() {
       site_id: string
       persona_id?: string
       keyword?: string
+      tone?: string
     }) => apiFetch<DescriptionGenerationResult>('/api/ai-writer/generate-description', data),
   })
 }

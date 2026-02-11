@@ -206,7 +206,7 @@ export default function RankMathBridgeSettings({ onBack }: RankMathBridgeSetting
   // ---- Render --------------------------------------------------------------
 
   return (
-    <div className="h-full overflow-auto bg-[#F5F6F8]">
+    <div className="h-full overflow-auto bg-[#F5F5F7]">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 pb-16">
 
         {/* ---------------------------------------------------------------- */}

@@ -65,6 +65,8 @@ const MODULE_SIDEBAR_MAP: Record<string, { section: string; sectionColor: string
   'gsc-insights': { section: 'Monitoring', sectionColor: 'bg-purple-500', label: 'GSC Insights', viewState: 'gsc-insights', order: 2 },
   'nana-banana': { section: 'Content', sectionColor: 'bg-yellow-500', label: 'Nana Banana', viewState: 'nana-banana', order: 1 },
   'cron': { section: 'Automation', sectionColor: 'bg-violet-500', label: 'Cron Jobs', viewState: 'cron-jobs', order: 2 },
+  'content-engine': { section: 'Content', sectionColor: 'bg-yellow-500', label: 'Content Engine', viewState: 'content-engine', order: 3 },
+  'telegraph': { section: 'Publishing', sectionColor: 'bg-sky-500', label: 'Telegraph', viewState: 'telegraph', order: 1 },
 }
 
 export function CoreProvider({ children }: { children: ReactNode }) {
@@ -152,6 +154,14 @@ export function CoreProvider({ children }: { children: ReactNode }) {
         viewState: config.viewState,
         order: config.order,
       })
+    }
+
+    // Content Lots: inject into Content section when content-engine is enabled
+    if (enabledModules.has('content-engine')) {
+      const contentSection = sectionMap.get('Content')
+      if (contentSection) {
+        contentSection.items.push({ label: 'Content Lots', viewState: 'content-lots', order: 4 })
+      }
     }
 
     // Sort items within each section

@@ -213,7 +213,7 @@ export default function NanaBananaDashboard({ onBack }: NanaBananaDashboardProps
   return (
     <div className="h-full overflow-y-auto">
       {/* Header */}
-      <div className="flex justify-between items-center px-4 sm:px-8 py-5 bg-[#F5F6F8] border-b border-gray-200 sticky top-0 z-10">
+      <div className="flex justify-between items-center px-4 sm:px-8 py-5 bg-[#F5F5F7] border-b border-gray-200 sticky top-0 z-10">
         <div className="flex items-center gap-3">
           {onBack && (
             <>

@@ -1,31 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Plus, Globe, Lock } from 'lucide-react';
+import { X, Plus, Globe } from 'lucide-react';
 import { useCreateSite, useSites } from '@/hooks/useSites';
 import { useToast } from '@/lib/contexts/ToastContext';
+import { THEME_COLORS } from '@/constants';
 
 interface AddSiteModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-// Theme colors for selector (simple gradients)
-const THEME_COLORS = {
-  'hyper-blue': { from: '#1e3a8a', to: '#7c3aed' },
-  'neo-mint': { from: '#059669', to: '#06b6d4' },
-  'solar-flare': { from: '#ea580c', to: '#dc2626' },
-  'deep-space': { from: '#4c1d95', to: '#1e1b4b' },
-  'cotton-candy': { from: '#f0abfc', to: '#bae6fd' },
-};
-
 export default function AddSiteModal({ isOpen, onClose }: AddSiteModalProps) {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [theme, setTheme] = useState('hyper-blue');
-  const [wpUsername, setWpUsername] = useState('');
-  const [wpAppPassword, setWpAppPassword] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isCompetitor, setIsCompetitor] = useState(false);
 
   const createSite = useCreateSite();
   const { data: existingSites = [] } = useSites();
@@ -59,19 +49,15 @@ export default function AddSiteModal({ isOpen, onClose }: AddSiteModalProps) {
         name: name.trim(),
         url: normalizedUrl,
         theme,
-        wp_username: wpUsername.trim() || undefined,
-        wp_app_password: wpAppPassword.trim() || undefined,
+        is_competitor: isCompetitor,
       },
       {
         onSuccess: () => {
           toast.success(`Site "${name}" added successfully!`);
-          // Reset form
           setName('');
           setUrl('');
           setTheme('hyper-blue');
-          setWpUsername('');
-          setWpAppPassword('');
-          setShowAdvanced(false);
+          setIsCompetitor(false);
           onClose();
         },
         onError: (error) => {
@@ -95,7 +81,7 @@ export default function AddSiteModal({ isOpen, onClose }: AddSiteModalProps) {
               </div>
               <div>
                 <h2 className="text-xl font-bold text-gray-900">Add New Site</h2>
-                <p className="text-sm text-gray-500">Connect your WordPress website</p>
+                <p className="text-sm text-gray-500">Add a new project to your portfolio</p>
               </div>
             </div>
             <button
@@ -178,50 +164,20 @@ export default function AddSiteModal({ isOpen, onClose }: AddSiteModalProps) {
             </div>
           </div>
 
-          {/* Advanced Settings Toggle */}
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
-          >
-            <Lock size={16} />
-            {showAdvanced ? 'Hide' : 'Show'} WordPress Credentials (Optional)
-          </button>
-
-          {/* Advanced Settings */}
-          {showAdvanced && (
-            <div className="space-y-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-              <div>
-                <label htmlFor="wpUsername" className="block text-sm font-medium text-gray-700 mb-2">
-                  WordPress Username
-                </label>
-                <input
-                  id="wpUsername"
-                  type="text"
-                  value={wpUsername}
-                  onChange={(e) => setWpUsername(e.target.value)}
-                  placeholder="admin"
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label htmlFor="wpAppPassword" className="block text-sm font-medium text-gray-700 mb-2">
-                  Application Password
-                </label>
-                <input
-                  id="wpAppPassword"
-                  type="password"
-                  value={wpAppPassword}
-                  onChange={(e) => setWpAppPassword(e.target.value)}
-                  placeholder="xxxx xxxx xxxx xxxx"
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                />
-                <p className="mt-2 text-xs text-gray-500">
-                  Generate in WordPress: Users → Profile → Application Passwords
-                </p>
-              </div>
-            </div>
-          )}
+          {/* Competitor Toggle */}
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="is_competitor"
+              checked={isCompetitor}
+              onChange={(e) => setIsCompetitor(e.target.checked)}
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+            />
+            <label htmlFor="is_competitor" className="text-sm font-semibold text-gray-700">
+              Competitor site
+            </label>
+            <span className="text-xs text-gray-400">Track this domain as a competitor</span>
+          </div>
 
           {/* Actions */}
           <div className="flex gap-3 pt-4">

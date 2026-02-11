@@ -1062,6 +1062,131 @@ export class WordPressClient {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // Redirect Management
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Sync redirect rules to WordPress plugin cache.
+   */
+  async syncRedirects(redirects: {
+    id: string
+    source_path: string
+    target_url: string
+    type: string
+    is_regex: boolean
+    enabled: boolean
+    auto_generated: boolean
+    note: string
+  }[]): Promise<void> {
+    const response = await fetch(`${this.connectorUrl}/redirects/sync`, {
+      method: 'POST',
+      headers: {
+        'Authorization': this.auth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ redirects }),
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.message || `Failed to sync redirects: ${response.statusText}`)
+    }
+  }
+
+  /**
+   * Get cached redirect rules from WordPress.
+   */
+  async getRedirectCache(): Promise<any[]> {
+    const response = await fetch(`${this.connectorUrl}/redirects`, {
+      headers: { 'Authorization': this.auth },
+    })
+    if (!response.ok) throw new Error(`Failed to get redirects: ${response.statusText}`)
+    const data = await response.json()
+    return data.redirects || []
+  }
+
+  /**
+   * Test a URL against redirect rules on WordPress.
+   */
+  async testRedirect(url: string): Promise<{ match: boolean; target?: string; type?: string }> {
+    const response = await fetch(`${this.connectorUrl}/redirects/test`, {
+      method: 'POST',
+      headers: {
+        'Authorization': this.auth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url }),
+    })
+    if (!response.ok) throw new Error(`Failed to test redirect: ${response.statusText}`)
+    return await response.json()
+  }
+
+  /**
+   * Validate a redirect before creation — checks conflicts, loops, target status.
+   */
+  async validateRedirect(source_path: string, target_url: string): Promise<{
+    safe: boolean
+    errors: { type: string; message: string }[]
+    warnings: { type: string; message: string; plugin?: string }[]
+  }> {
+    const response = await fetch(`${this.connectorUrl}/redirects/validate`, {
+      method: 'POST',
+      headers: {
+        'Authorization': this.auth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ source_path, target_url }),
+    })
+    if (!response.ok) throw new Error(`Failed to validate redirect: ${response.statusText}`)
+    return await response.json()
+  }
+
+  /**
+   * Get 404 error log from WordPress.
+   */
+  async get404Log(): Promise<any[]> {
+    const response = await fetch(`${this.connectorUrl}/redirects/404-log`, {
+      headers: { 'Authorization': this.auth },
+    })
+    if (!response.ok) throw new Error(`Failed to get 404 log: ${response.statusText}`)
+    const data = await response.json()
+    return data.entries || []
+  }
+
+  /**
+   * Clear 404 error buffer on WordPress.
+   */
+  async clear404Log(): Promise<void> {
+    const response = await fetch(`${this.connectorUrl}/redirects/404-log`, {
+      method: 'DELETE',
+      headers: { 'Authorization': this.auth },
+    })
+    if (!response.ok) throw new Error(`Failed to clear 404 log: ${response.statusText}`)
+  }
+
+  /**
+   * Get slug change log from WordPress.
+   */
+  async getSlugChanges(): Promise<any[]> {
+    const response = await fetch(`${this.connectorUrl}/redirects/slug-changes`, {
+      headers: { 'Authorization': this.auth },
+    })
+    if (!response.ok) throw new Error(`Failed to get slug changes: ${response.statusText}`)
+    const data = await response.json()
+    return data.changes || []
+  }
+
+  /**
+   * Clear slug change log after processing.
+   */
+  async clearSlugChanges(): Promise<void> {
+    const response = await fetch(`${this.connectorUrl}/redirects/slug-changes`, {
+      method: 'DELETE',
+      headers: { 'Authorization': this.auth },
+    })
+    if (!response.ok) throw new Error(`Failed to clear slug changes: ${response.statusText}`)
+  }
+
   /**
    * Safely parse JSON string, return null if invalid
    */

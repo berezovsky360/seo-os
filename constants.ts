@@ -27,6 +27,15 @@ export const THEMES: Record<string, React.CSSProperties> = {
 
 export const THEME_KEYS = Object.keys(THEMES);
 
+// Simplified gradient colors for theme selectors (AddSiteModal, Dashboard card picker)
+export const THEME_COLORS: Record<string, { from: string; to: string }> = {
+  'hyper-blue': { from: '#1e3a8a', to: '#7c3aed' },
+  'neo-mint': { from: '#059669', to: '#06b6d4' },
+  'solar-flare': { from: '#ea580c', to: '#dc2626' },
+  'deep-space': { from: '#4c1d95', to: '#1e1b4b' },
+  'cotton-candy': { from: '#f0abfc', to: '#bae6fd' },
+};
+
 // Seeded random function for consistent SSR/CSR values
 // This prevents hydration mismatches
 function seededRandom(seed: number): number {

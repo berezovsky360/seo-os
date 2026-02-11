@@ -32,6 +32,15 @@ export class RecipesModule implements SEOModule {
         { name: 'trigger_event', type: 'string', label: 'Trigger Event', required: true },
       ],
     },
+    {
+      id: 'execute_recipe',
+      name: 'Execute Sub-Recipe',
+      description: 'Call another recipe as a sub-routine with input parameters',
+      params: [
+        { name: 'recipe_id', type: 'string', label: 'Target Recipe ID', required: true },
+        { name: 'input_mapping', type: 'string', label: 'Input Mapping (JSON)', required: false },
+      ],
+    },
   ]
 
   requiredKeys: ApiKeyType[] = []

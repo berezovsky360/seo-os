@@ -14,6 +14,8 @@ import type { CoreEvent, EventRecord, Recipe, ModuleId, ApiKeyType } from './eve
 import type { ModuleContext, SEOModule } from './module-interface'
 import { MODULE_REGISTRY } from './registry'
 
+const MAX_RECIPE_DEPTH = 5
+
 // Server-side Supabase client
 function getSupabase() {
   return createClient(
@@ -130,12 +132,36 @@ export class CoreDispatcher {
     recipe: Recipe,
     triggerEvent: CoreEvent,
     userId: string,
-    eventId: string
+    eventId: string,
+    depth: number = 0
   ): Promise<void> {
+    if (depth >= MAX_RECIPE_DEPTH) {
+      throw new Error(`Sub-recipe depth limit (${MAX_RECIPE_DEPTH}) exceeded — possible infinite loop`)
+    }
+
     const supabase = getSupabase()
     let previousResult: Record<string, any> = { ...triggerEvent.payload }
 
     for (const action of recipe.actions) {
+      // Intercept sub-recipe calls
+      if (action.module === 'recipes' && action.action === 'execute_recipe') {
+        const subRecipeId = action.params?.recipe_id
+        if (!subRecipeId) {
+          console.warn('[CoreDispatcher] Sub-recipe action missing recipe_id, skipping')
+          continue
+        }
+
+        const subResult = await this.executeRecipeById(
+          subRecipeId,
+          { ...previousResult, ...(action.params?.input_mapping || {}) },
+          userId,
+          eventId,
+          depth + 1
+        )
+        previousResult = { ...previousResult, ...subResult }
+        continue
+      }
+
       const moduleId = action.module as ModuleId
       const module = MODULE_REGISTRY[moduleId]
 
@@ -177,7 +203,6 @@ export class CoreDispatcher {
         previousResult = { ...previousResult, ...result }
 
         // Log which module.action processed this event
-        // Use raw SQL array_append since Supabase JS doesn't natively support it
         try {
           const { data: current } = await supabase
             .from('events_log')
@@ -211,6 +236,66 @@ export class CoreDispatcher {
       },
       site_id: triggerEvent.site_id,
     }, userId)
+  }
+
+  /**
+   * Execute a recipe by its ID (used for sub-recipe calls).
+   * Returns the accumulated result from the recipe's action chain.
+   */
+  async executeRecipeById(
+    recipeId: string,
+    inputParams: Record<string, any>,
+    userId: string,
+    parentEventId: string,
+    depth: number
+  ): Promise<Record<string, any>> {
+    const supabase = getSupabase()
+
+    const { data: recipe } = await supabase
+      .from('recipes')
+      .select('*')
+      .eq('id', recipeId)
+      .eq('user_id', userId)
+      .single()
+
+    if (!recipe) {
+      throw new Error(`Sub-recipe "${recipeId}" not found`)
+    }
+
+    // Emit sub-recipe started
+    await this.emitInternal({
+      event_type: 'recipe.sub_recipe_started',
+      source_module: 'recipes',
+      payload: {
+        parent_event_id: parentEventId,
+        sub_recipe_id: recipeId,
+        sub_recipe_name: recipe.name,
+        depth,
+      },
+    }, userId)
+
+    // Build a synthetic trigger event with the input params
+    const syntheticEvent: CoreEvent = {
+      event_type: recipe.trigger_event || 'core.manual_trigger',
+      source_module: 'recipes',
+      payload: inputParams,
+    }
+
+    await this.executeRecipe(recipe as Recipe, syntheticEvent, userId, parentEventId, depth)
+
+    // Emit sub-recipe completed
+    await this.emitInternal({
+      event_type: 'recipe.sub_recipe_completed',
+      source_module: 'recipes',
+      payload: {
+        parent_event_id: parentEventId,
+        sub_recipe_id: recipeId,
+        sub_recipe_name: recipe.name,
+        depth,
+      },
+    }, userId)
+
+    return inputParams
   }
 
   /**

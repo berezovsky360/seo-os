@@ -12,6 +12,7 @@ import {
   type Connection,
   type OnConnect,
   ReactFlowProvider,
+  ConnectionLineType,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 
@@ -21,10 +22,11 @@ import { ActionNode } from './nodes/ActionNode'
 import { DelayNode } from './nodes/DelayNode'
 import { BranchNode } from './nodes/BranchNode'
 import { CronNode } from './nodes/CronNode'
+import { SubRecipeNode } from './nodes/SubRecipeNode'
 import { NodePalette } from './NodePalette'
 import { recipeToGraph, graphToRecipe } from '@/lib/modules/recipes/graph-serializer'
 import type { Recipe } from '@/lib/core/events'
-import type { FlowNode, FlowNodeData, TriggerNodeData, ActionNodeData, ConditionNodeData, DelayNodeData, BranchNodeData, CronNodeData } from '@/lib/modules/recipes/flow-types'
+import type { FlowNode, FlowNodeData } from '@/lib/modules/recipes/flow-types'
 import { Save, X, ToggleLeft, ToggleRight, Loader2 } from 'lucide-react'
 
 const nodeTypes = {
@@ -34,6 +36,7 @@ const nodeTypes = {
   delay: DelayNode,
   branch: BranchNode,
   cron: CronNode,
+  sub_recipe: SubRecipeNode,
 }
 
 interface RecipeFlowEditorProps {
@@ -57,6 +60,8 @@ function getDefaultNodeData(type: string): FlowNodeData {
       return { type: 'branch', condition: { key: '', operator: 'equals', value: '' }, label: 'Branch' }
     case 'cron':
       return { type: 'cron', cron_expression: '', timezone: 'UTC', label: 'Cron Trigger' }
+    case 'sub_recipe':
+      return { type: 'sub_recipe', recipe_id: '', recipe_name: '', input_mapping: {}, label: 'Sub-Recipe' }
     default:
       return { type: 'action', module: '' as any, action: '', params: {}, label: 'Node' }
   }
@@ -93,7 +98,12 @@ function FlowEditorInner({ recipe, onSave, onClose, isSaving }: RecipeFlowEditor
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialGraph.edges)
 
   const onConnect: OnConnect = useCallback(
-    (connection: Connection) => setEdges((eds) => addEdge({ ...connection, animated: true }, eds)),
+    (connection: Connection) => setEdges((eds) => addEdge({
+      ...connection,
+      animated: true,
+      type: 'smoothstep',
+      style: { stroke: '#a78bfa', strokeWidth: 2 },
+    }, eds)),
     [setEdges]
   )
 
@@ -127,27 +137,6 @@ function FlowEditorInner({ recipe, onSave, onClose, isSaving }: RecipeFlowEditor
     [setNodes]
   )
 
-  // Update node data when user changes inputs
-  const onNodeDataChange = useCallback((nodeId: string, field: string, value: any) => {
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id !== nodeId) return node
-        const newData = { ...node.data, [field]: value }
-        // Update label
-        if (node.type === 'trigger' && field === 'event') {
-          (newData as TriggerNodeData).label = `On: ${value || 'Select event'}`
-        }
-        if (node.type === 'action') {
-          const d = newData as ActionNodeData
-          if (field === 'module' || field === 'action') {
-            d.label = `${d.module || '?'}.${d.action || '?'}`
-          }
-        }
-        return { ...node, data: newData }
-      })
-    )
-  }, [setNodes])
-
   // Save handler
   const handleSave = async () => {
     if (!recipeName.trim()) return
@@ -167,20 +156,29 @@ function FlowEditorInner({ recipe, onSave, onClose, isSaving }: RecipeFlowEditor
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-gray-950">
+    <div className="fixed inset-0 z-50 flex flex-col bg-gray-50">
       {/* Top Toolbar */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 z-20">
+      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200 z-20 shadow-sm">
         <div className="flex items-center gap-4">
-          <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-lg transition-colors">
-            <X size={18} className="text-gray-400" />
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <X size={18} className="text-gray-500" />
           </button>
-          <input
-            type="text"
-            value={recipeName}
-            onChange={(e) => setRecipeName(e.target.value)}
-            placeholder="Recipe name..."
-            className="bg-transparent border-none text-lg font-bold text-white outline-none placeholder-gray-600 w-64"
-          />
+          <div className="flex flex-col">
+            <input
+              type="text"
+              value={recipeName}
+              onChange={(e) => setRecipeName(e.target.value)}
+              placeholder="Recipe name..."
+              className="bg-transparent border-none text-lg font-bold text-gray-900 outline-none placeholder-gray-400 w-72"
+            />
+            <input
+              type="text"
+              value={recipeDescription}
+              onChange={(e) => setRecipeDescription(e.target.value)}
+              placeholder="Add a description..."
+              className="bg-transparent border-none text-xs text-gray-500 outline-none placeholder-gray-400 w-72 mt-0.5"
+            />
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -189,20 +187,20 @@ function FlowEditorInner({ recipe, onSave, onClose, isSaving }: RecipeFlowEditor
           >
             {enabled ? (
               <>
-                <ToggleRight size={20} className="text-emerald-400" />
-                <span className="text-emerald-400">Enabled</span>
+                <ToggleRight size={20} className="text-emerald-500" />
+                <span className="text-emerald-600 font-semibold">Enabled</span>
               </>
             ) : (
               <>
-                <ToggleLeft size={20} className="text-gray-500" />
-                <span className="text-gray-500">Disabled</span>
+                <ToggleLeft size={20} className="text-gray-400" />
+                <span className="text-gray-400">Disabled</span>
               </>
             )}
           </button>
           <button
             onClick={handleSave}
             disabled={!recipeName.trim() || isSaving}
-            className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50 shadow-sm"
           >
             {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             Save
@@ -227,21 +225,28 @@ function FlowEditorInner({ recipe, onSave, onClose, isSaving }: RecipeFlowEditor
             onDrop={onDrop}
             nodeTypes={nodeTypes}
             fitView
-            className="bg-gray-950"
-            defaultEdgeOptions={{ animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } }}
+            className="bg-gray-50"
+            connectionLineType={ConnectionLineType.SmoothStep}
+            defaultEdgeOptions={{
+              animated: true,
+              type: 'smoothstep',
+              style: { stroke: '#a78bfa', strokeWidth: 2 },
+            }}
           >
-            <Background color="#333" gap={20} />
-            <Controls className="!bg-gray-800 !border-gray-700 !shadow-lg [&_button]:!bg-gray-800 [&_button]:!border-gray-700 [&_button]:!text-gray-300 [&_button:hover]:!bg-gray-700" />
+            <Background color="#e5e7eb" gap={20} size={1} />
+            <Controls className="!bg-white !border-gray-200 !shadow-md !rounded-xl [&_button]:!bg-white [&_button]:!border-gray-200 [&_button]:!text-gray-600 [&_button:hover]:!bg-gray-50 [&_button]:!rounded-lg" />
             <MiniMap
-              className="!bg-gray-900 !border-gray-800"
+              className="!bg-white !border-gray-200 !rounded-xl !shadow-md"
+              maskColor="rgba(0, 0, 0, 0.08)"
               nodeColor={(node) => {
                 switch (node.type) {
                   case 'trigger': return '#f59e0b'
                   case 'condition': return '#f97316'
                   case 'action': return '#10b981'
-                  case 'delay': return '#94a3b8'
+                  case 'delay': return '#64748b'
                   case 'branch': return '#a855f7'
                   case 'cron': return '#8b5cf6'
+                  case 'sub_recipe': return '#06b6d4'
                   default: return '#6366f1'
                 }
               }}

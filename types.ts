@@ -20,6 +20,7 @@ export interface Site {
   theme: string; // New property for 3D cover color
   wp_username?: string | null;
   wp_app_password?: string | null;
+  is_competitor?: boolean;
   metrics: {
     speedScore: number;
     notFoundCount: number;
@@ -134,7 +135,11 @@ export type ViewState =
     | 'bulk-metadata'
     | 'nana-banana'
     | 'docs'
-    | 'cron-jobs';
+    | 'cron-jobs'
+    | 'content-engine'
+    | 'content-lots'
+    | 'telegraph'
+    | 'competitor-analysis';
 
 export interface Article {
     id: string;

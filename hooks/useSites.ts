@@ -29,6 +29,7 @@ export function useCreateSite() {
       theme?: string
       wp_username?: string
       wp_app_password?: string
+      is_competitor?: boolean
     }) => siteService.createSite(site),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites'] })
