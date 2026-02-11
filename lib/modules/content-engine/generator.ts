@@ -96,7 +96,7 @@ Return HTML only (use <p> tags).`,
     : 'You are a professional SEO content writer. Write clear, engaging, and well-structured content optimized for both readers and search engines.'
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-preview-05-20',
+    model: 'gemini-2.5-flash',
     contents: sectionPrompts[type],
     config: {
       systemInstruction,
@@ -244,7 +244,7 @@ export async function assembleArticle(
   const ai = new GoogleGenAI({ apiKey })
 
   const metaResponse = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-preview-05-20',
+    model: 'gemini-2.5-flash',
     contents: `Generate SEO metadata for an article about "${topic}" with keywords: ${keywords.join(', ')}
 
 The article is ${wordCount} words long.

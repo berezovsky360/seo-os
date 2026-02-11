@@ -13,7 +13,7 @@ export async function scoreItem(
   const truncatedContent = content?.slice(0, 3000) || ''
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-preview-05-20',
+    model: 'gemini-2.5-flash',
     contents: `You are an expert content analyst. Score this content on two dimensions.
 
 ## Content to Analyze

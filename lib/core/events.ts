@@ -119,6 +119,11 @@ export type EventType =
   | 'competitor.analysis_completed'
   | 'competitor.new_threat'
   | 'competitor.keyword_gap_found'
+  | 'competitor.overview_fetched'
+  | 'competitor.top_pages_fetched'
+  | 'competitor.competitors_discovered'
+  | 'competitor.content_gap_analyzed'
+  | 'competitor.deep_analysis_completed'
   // Sub-Recipe events (inter-recipe communication)
   | 'recipe.sub_recipe_started'
   | 'recipe.sub_recipe_completed'

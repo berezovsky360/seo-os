@@ -118,7 +118,7 @@ export async function clusterItems(
 
     try {
       const labelResult = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-05-20',
+        model: 'gemini-2.5-flash',
         contents: `Generate a short (3-6 word) topic label for this cluster of related articles:\n- ${titles}\n\nRespond with JSON: {"label": "<label>", "summary": "<1 sentence summary>"}`,
         config: { responseMimeType: 'application/json', temperature: 0.3 },
       })

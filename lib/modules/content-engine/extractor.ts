@@ -13,7 +13,7 @@ export async function extractFacts(
   const truncatedContent = content?.slice(0, 4000) || ''
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-preview-05-20',
+    model: 'gemini-2.5-flash',
     contents: `You are a fact extraction specialist. Extract key facts and SEO keywords from this content.
 
 ## Content

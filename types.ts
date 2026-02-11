@@ -139,7 +139,8 @@ export type ViewState =
     | 'content-engine'
     | 'content-lots'
     | 'telegraph'
-    | 'competitor-analysis';
+    | 'competitor-analysis'
+    | 'ai-writer';
 
 export interface Article {
     id: string;

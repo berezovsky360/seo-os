@@ -24,6 +24,7 @@ import ContentLots from '@/components/modules/content-engine/ContentLots';
 import TelegraphDashboard from '@/components/modules/telegraph/TelegraphDashboard';
 import AccountSettings from '@/components/modules/settings/AccountSettings';
 import CompetitorAnalysisDashboard from '@/components/modules/competitor-analysis/CompetitorAnalysisDashboard';
+import AIWriterDashboard from '@/components/modules/ai-writer/AIWriterDashboard';
 import ContentCalendar from '@/components/ContentCalendar';
 import { MOCK_SITES } from '@/constants';
 import { ViewState, Site, UserRole } from '@/types';
@@ -57,6 +58,7 @@ const VIEW_TITLES: Partial<Record<ViewState, string>> = {
   'content-lots': 'Content Lots',
   'telegraph': 'Telegraph',
   'competitor-analysis': 'Competitor Analysis',
+  'ai-writer': 'AI Writer',
 };
 
 // ====== URL helpers ======
@@ -230,6 +232,8 @@ export default function Home() {
         return <AccountSettings onBack={goBack} onChangeView={changeView} />;
       case 'competitor-analysis':
         return <CompetitorAnalysisDashboard onBack={goBack} />;
+      case 'ai-writer':
+        return <AIWriterDashboard onBack={goBack} onChangeView={changeView} />;
       default:
         return dashboardView;
     }

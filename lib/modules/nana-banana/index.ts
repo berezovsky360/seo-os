@@ -161,7 +161,7 @@ export class NanaBananaModule implements SEOModule {
       : ''
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-05-20',
+      model: 'gemini-2.5-flash',
       contents: `You are an SEO image specialist. Analyze this article and generate a detailed image generation prompt for Imagen.
 
 Article Title: ${post.title}
@@ -250,7 +250,7 @@ Return ONLY the image generation prompt, nothing else.`,
       : 'Generate the alt-text, caption, and title in the same language as the article title.'
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-05-20',
+      model: 'gemini-2.5-flash',
       contents: [
         {
           inlineData: {
@@ -427,7 +427,7 @@ Return ONLY valid JSON in this format:
     const ai = new GoogleGenAI({ apiKey: geminiKey })
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-05-20',
+      model: 'gemini-2.5-flash',
       contents: [
         {
           inlineData: {

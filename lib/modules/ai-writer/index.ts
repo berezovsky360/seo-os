@@ -85,7 +85,13 @@ export class AIWriterModule implements SEOModule {
 
   requiredKeys: ApiKeyType[] = ['gemini']
 
-  sidebar: ModuleSidebarConfig | null = null // No own page
+  sidebar: ModuleSidebarConfig | null = {
+    section: 'Content',
+    sectionColor: 'bg-yellow-500',
+    label: 'AI Writer',
+    viewState: 'ai-writer',
+    order: 5,
+  }
 
   async handleEvent(_event: CoreEvent, _context: ModuleContext): Promise<CoreEvent | null> {
     return null
@@ -210,7 +216,7 @@ Return ONLY valid JSON in this exact format:
 {"titles": ["Title Option 1", "Title Option 2", "Title Option 3"]}`
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-05-20',
+      model: 'gemini-2.5-flash',
       contents: prompt,
     })
 
@@ -276,7 +282,7 @@ Return ONLY valid JSON in this exact format:
 {"descriptions": ["Description 1", "Description 2", "Description 3"]}`
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-05-20',
+      model: 'gemini-2.5-flash',
       contents: prompt,
     })
 
@@ -346,7 +352,7 @@ Return ONLY valid JSON:
 }`
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-05-20',
+      model: 'gemini-2.5-flash',
       contents: prompt,
     })
 

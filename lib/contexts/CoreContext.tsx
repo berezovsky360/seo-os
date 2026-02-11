@@ -67,6 +67,7 @@ const MODULE_SIDEBAR_MAP: Record<string, { section: string; sectionColor: string
   'cron': { section: 'Automation', sectionColor: 'bg-violet-500', label: 'Cron Jobs', viewState: 'cron-jobs', order: 2 },
   'content-engine': { section: 'Content', sectionColor: 'bg-yellow-500', label: 'Content Engine', viewState: 'content-engine', order: 3 },
   'telegraph': { section: 'Publishing', sectionColor: 'bg-sky-500', label: 'Telegraph', viewState: 'telegraph', order: 1 },
+  'ai-writer': { section: 'Content', sectionColor: 'bg-yellow-500', label: 'AI Writer', viewState: 'ai-writer', order: 5 },
 }
 
 export function CoreProvider({ children }: { children: ReactNode }) {
