@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Site, UserRole, SiteStatus } from '../types';
 import { getRouteForView } from '@/lib/utils/routes';
+import { useAuth } from '@/lib/contexts/AuthContext';
 import {
   PlusCircle, FileText, CheckCircle, Sparkles, Activity, AlertCircle, Search,
   TrendingUp, Settings, ExternalLink, Calendar, Wifi, WifiOff,
@@ -93,7 +94,9 @@ function isSiteConnected(site: Site): boolean {
 
 const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGeneratePost, userRole, onDeleteSite, onSelectSite }) => {
   const router = useRouter();
-  const canAddProperty = userRole !== 'user';
+  const { userProfile } = useAuth();
+  // Show button while profile loads (optimistic), hide only for confirmed 'user' role
+  const canAddProperty = !userProfile || userRole !== 'user';
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddSiteModalOpen, setIsAddSiteModalOpen] = useState(false);
   const [syncingSiteId, setSyncingSiteId] = useState<string | null>(null);
