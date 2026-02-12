@@ -73,18 +73,27 @@ async function handlePersonalBot(userId: string, botToken: string) {
 async function handleSharedBot(userId: string) {
   const sharedToken = process.env.TELEGRAM_SHARED_BOT_TOKEN
   if (!sharedToken) {
+    console.error('[Connect] TELEGRAM_SHARED_BOT_TOKEN not set')
     return NextResponse.json({ error: 'Shared bot not configured' }, { status: 500 })
   }
 
   // Verify shared bot is alive
   const verification = await verifyBot(sharedToken)
+  console.log('[Connect] Bot verification:', JSON.stringify(verification))
   if (!verification.ok) {
     return NextResponse.json({ error: 'Shared bot is unavailable' }, { status: 500 })
   }
 
   // Ensure webhook is set for shared bot
-  const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/chat/telegram/webhook`
-  await setTelegramWebhook(sharedToken, webhookUrl)
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  console.log('[Connect] NEXT_PUBLIC_APP_URL:', appUrl)
+  const webhookUrl = `${appUrl}/api/chat/telegram/webhook`
+  try {
+    await setTelegramWebhook(sharedToken, webhookUrl)
+    console.log('[Connect] Webhook set to:', webhookUrl)
+  } catch (err: any) {
+    console.error('[Connect] Failed to set webhook:', err.message)
+  }
 
   // Generate a unique link code
   const linkCode = crypto.randomBytes(4).toString('hex') // 8-char hex
@@ -108,8 +117,12 @@ async function handleSharedBot(userId: string) {
     .select()
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[Connect] Supabase insert error:', error.message, error.code)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
 
+  console.log('[Connect] Channel created:', channel.id, 'linkCode:', linkCode)
   return NextResponse.json({
     channel,
     bot_username: verification.botUsername,

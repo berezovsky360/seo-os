@@ -105,6 +105,8 @@ export default function ConnectTelegramModal({ isOpen, onClose, onSuccess }: Con
             <div className="space-y-3 mt-3">
               <p className="text-sm text-gray-500 mb-4">Choose how to connect Telegram:</p>
 
+              {error && <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+
               {/* Option 1: SEO OS Bot (Quick) */}
               <button
                 onClick={handleConnectShared}
