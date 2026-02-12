@@ -173,7 +173,7 @@ export class CoreDispatcher {
       // Check if module is enabled for this user
       const { data: moduleConfig } = await supabase
         .from('modules_config')
-        .select('enabled')
+        .select('enabled, settings')
         .eq('user_id', userId)
         .eq('module_id', moduleId)
         .single()
@@ -193,6 +193,7 @@ export class CoreDispatcher {
         emitEvent: async (evt: CoreEvent) => {
           await this.emitInternal(evt, userId)
         },
+        settings: moduleConfig?.settings || {},
       }
 
       // Merge previous result into action params

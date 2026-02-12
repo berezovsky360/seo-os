@@ -15,7 +15,7 @@
 
 import type { CoreEvent, EventType, ApiKeyType } from '@/lib/core/events'
 import type { SEOModule, ModuleAction, ModuleContext, ModuleSidebarConfig } from '@/lib/core/module-interface'
-import { createDataForSEOClient } from '@/lib/dataforseo/client'
+import { createDataForSEOClient, estimateLabsCost } from '@/lib/dataforseo/client'
 
 export class CompetitorAnalysisModule implements SEOModule {
   id = 'competitor-analysis' as const
@@ -590,8 +590,13 @@ export class CompetitorAnalysisModule implements SEOModule {
     const top3 = overview.organic.pos_1 + overview.organic.pos_2_3
     const top10 = top3 + overview.organic.pos_4_10
 
-    // Estimate credits: overview (0.1) + ranked keywords (0.1) + top pages (0.1)
-    const estimatedCredits = 0.3
+    // Calculate real cost based on DataForSEO pricing
+    const rankedKeywordsRows = Math.min(keywordsCount, 500)
+    const costEstimate = estimateLabsCost({
+      domainOverview: true,
+      rankedKeywords: rankedKeywordsRows,
+      topPages: 100,
+    })
 
     // Get current balance
     let balance = 0
@@ -611,7 +616,8 @@ export class CompetitorAnalysisModule implements SEOModule {
       keywords_top10: top10,
       referring_domains: overview.backlinks_info.referring_domains,
       backlinks_count: overview.backlinks_info.backlinks,
-      estimated_credits: estimatedCredits,
+      cost_breakdown: costEstimate.breakdown,
+      estimated_credits: costEstimate.total,
       balance,
     }
   }

@@ -1,11 +1,11 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
   ChevronLeft, Swords, Plus, Trash2, RefreshCw, Loader2,
   TrendingUp, TrendingDown, Search,
   Globe, BarChart3, FileText, Target, Compass, Zap, Shield,
-  ArrowUpRight, ArrowDownRight, Minus, Info, X,
+  ArrowUpRight, ArrowDownRight, Minus, Info, X, Microscope,
 } from 'lucide-react'
 import { useSites } from '@/hooks/useSites'
 import {
@@ -30,6 +30,10 @@ import type {
   ContentGapItem,
   PrecheckResult,
 } from '@/hooks/useCompetitorAnalysis'
+import { useStartCrawl } from '@/hooks/useCompetitorAnatomy'
+import { useAuth } from '@/lib/contexts/AuthContext'
+import { useBackgroundTasks } from '@/lib/contexts/BackgroundTaskContext'
+import { useQueryClient } from '@tanstack/react-query'
 
 interface CompetitorAnalysisDashboardProps {
   onBack?: () => void
@@ -54,6 +58,26 @@ export default function CompetitorAnalysisDashboard({ onBack }: CompetitorAnalys
   const { data: competitors = [], isLoading } = useCompetitors(selectedSiteId)
   const deleteCompetitor = useDeleteCompetitor()
   const deepAnalysis = useDeepAnalysis()
+  const queryClient = useQueryClient()
+  const { tasks } = useBackgroundTasks()
+
+  // Watch background tasks for completion → invalidate queries
+  const completedTaskIds = useRef(new Set<string>())
+  useEffect(() => {
+    for (const task of tasks) {
+      if (task.status !== 'completed' || completedTaskIds.current.has(task.id)) continue
+      completedTaskIds.current.add(task.id)
+
+      if (task.task_type === 'deep_analysis') {
+        queryClient.invalidateQueries({ queryKey: ['competitors', selectedSiteId] })
+        queryClient.invalidateQueries({ queryKey: ['competitor-top-pages'] })
+        queryClient.invalidateQueries({ queryKey: ['competitor-snapshots'] })
+      }
+      if (task.task_type === 'competitor_discover') {
+        queryClient.invalidateQueries({ queryKey: ['competitor-discoveries', selectedSiteId] })
+      }
+    }
+  }, [tasks, selectedSiteId, queryClient])
 
   const selectedComp = competitors.find(c => c.id === selectedCompetitorId) || null
 
@@ -300,9 +324,23 @@ function AddCompetitorForm({
                 <span className="font-bold text-gray-900">{formatNumber(precheckData.keywords_top10)}</span>
               </div>
             </div>
-            <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
-              <span className="text-gray-500">Est. cost: ~${precheckData.estimated_credits.toFixed(2)}</span>
-              <span className="text-gray-500">Balance: ${precheckData.balance.toFixed(2)}</span>
+            <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+              {precheckData.cost_breakdown && Object.entries(precheckData.cost_breakdown).map(([label, cost]) => (
+                <div key={label} className="flex justify-between text-[10px]">
+                  <span className="text-gray-500">{label}</span>
+                  <span className="text-gray-700 font-mono">${(cost as number).toFixed(4)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between text-xs pt-1 border-t border-gray-50">
+                <span className="font-semibold text-gray-700">Total</span>
+                <span className="font-bold text-gray-900">${precheckData.estimated_credits.toFixed(4)}</span>
+              </div>
+              <div className="flex justify-between text-[10px]">
+                <span className="text-gray-400">Balance</span>
+                <span className={precheckData.balance < precheckData.estimated_credits ? 'text-red-500 font-semibold' : 'text-emerald-600'}>
+                  ${precheckData.balance.toFixed(2)}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -597,6 +635,8 @@ function CompetitorDetailView({
 function OverviewTab({ competitor, siteId }: { competitor: Competitor; siteId: string }) {
   const { data: snapshots = [] } = useCompetitorSnapshots(competitor.id)
   const fetchOverview = useFetchOverview()
+  const startCrawl = useStartCrawl()
+  const { user } = useAuth()
 
   const metrics = [
     { label: 'Domain Rank', value: competitor.domain_rank ?? '—', color: 'text-indigo-600' },
@@ -639,6 +679,34 @@ function OverviewTab({ competitor, siteId }: { competitor: Competitor; siteId: s
           </div>
         ))}
       </div>
+
+      {/* Run Site Crawl — cross-module link to Competitor Anatomy */}
+      {hasData && (
+        <div className="bg-violet-50 border border-violet-200 rounded-xl p-4 flex items-center gap-3">
+          <Microscope size={16} className="text-violet-500 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-violet-800">Run Site Crawl</p>
+            <p className="text-xs text-violet-600 mt-0.5">Crawl {competitor.domain} to analyze pages, SEO issues, duplicates, and redirects.</p>
+          </div>
+          <button
+            onClick={() => {
+              if (!user?.id) return
+              startCrawl.mutate({
+                target_domain: competitor.domain,
+                user_id: user.id,
+                max_crawl_pages: 100,
+                competitor_id: competitor.id,
+                site_id: siteId,
+              })
+            }}
+            disabled={startCrawl.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-semibold rounded-lg hover:bg-violet-700 disabled:opacity-50"
+          >
+            {startCrawl.isPending ? <Loader2 size={12} className="animate-spin" /> : <Microscope size={12} />}
+            Crawl
+          </button>
+        </div>
+      )}
 
       {/* Keyword Distribution */}
       {hasData && (

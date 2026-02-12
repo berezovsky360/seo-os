@@ -1,7 +1,7 @@
 import React from 'react';
 import { Site, SiteStatus, UserRole } from '../types';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
-import { ExternalLink, Sparkles, Activity, AlertCircle, CheckCircle, Trash2, MoreHorizontal } from 'lucide-react';
+import { Sparkles, Activity, AlertCircle, CheckCircle, Trash2, MoreHorizontal } from 'lucide-react';
 
 interface SiteCardProps {
   site: Site;
@@ -12,8 +12,8 @@ interface SiteCardProps {
 
 const SiteCard: React.FC<SiteCardProps> = ({ site, onGeneratePost, userRole, onDelete }) => {
   
-  const canDelete = userRole === 'ADMIN';
-  const canCreateContent = userRole === 'ADMIN' || userRole === 'EDITOR';
+  const canDelete = userRole !== 'user';
+  const canCreateContent = userRole !== 'user';
 
   const getStatusIcon = (status: SiteStatus) => {
     switch (status) {
@@ -28,16 +28,16 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onGeneratePost, userRole, onD
   };
 
   return (
-    <div className="bg-white rounded-2xl p-5 hover:shadow-lg transition-all duration-300 border border-gray-100 group relative flex flex-col h-full">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 border border-gray-100 dark:border-gray-700/50 group relative flex flex-col h-full">
       
       {/* Header */}
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center space-x-3">
-          <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center border border-gray-100">
+          <div className="w-12 h-12 rounded-2xl bg-gray-50 dark:bg-gray-700 flex items-center justify-center border border-gray-100 dark:border-gray-600">
              <img src={site.favicon} alt={site.name} className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-gray-900 leading-tight">{site.name}</h2>
+            <h2 className="text-base font-bold text-gray-900 dark:text-gray-100 leading-tight">{site.name}</h2>
             <a href={`https://${site.url}`} target="_blank" rel="noreferrer" className="text-xs text-gray-400 hover:text-indigo-600 flex items-center mt-0.5 transition-colors">
               {site.url}
             </a>
@@ -53,16 +53,16 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onGeneratePost, userRole, onD
 
       {/* Metrics Grid */}
       <div className="grid grid-cols-3 gap-3 mb-6">
-        <div className="bg-gray-50/50 rounded-xl p-2.5 flex flex-col items-center justify-center border border-gray-100">
-            <span className="text-sm font-bold text-gray-900">{site.metrics.speedScore}</span>
+        <div className="bg-gray-50/50 dark:bg-gray-700/50 rounded-xl p-2.5 flex flex-col items-center justify-center border border-gray-100 dark:border-gray-600">
+            <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{site.metrics.speedScore}</span>
             <span className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide">Speed</span>
         </div>
-        <div className="bg-gray-50/50 rounded-xl p-2.5 flex flex-col items-center justify-center border border-gray-100">
+        <div className="bg-gray-50/50 dark:bg-gray-700/50 rounded-xl p-2.5 flex flex-col items-center justify-center border border-gray-100 dark:border-gray-600">
             <span className={`text-sm font-bold ${site.metrics.notFoundCount > 0 ? 'text-rose-500' : 'text-gray-900'}`}>{site.metrics.notFoundCount}</span>
             <span className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide">404s</span>
         </div>
-        <div className="bg-gray-50/50 rounded-xl p-2.5 flex flex-col items-center justify-center border border-gray-100">
-            <span className="text-sm font-bold text-gray-900">{(site.metrics.indexedPages / 1000).toFixed(1)}k</span>
+        <div className="bg-gray-50/50 dark:bg-gray-700/50 rounded-xl p-2.5 flex flex-col items-center justify-center border border-gray-100 dark:border-gray-600">
+            <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{(site.metrics.indexedPages / 1000).toFixed(1)}k</span>
             <span className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide">Index</span>
         </div>
       </div>
@@ -90,12 +90,12 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onGeneratePost, userRole, onD
       </div>
 
       {/* Status Queue Pill */}
-      <div className="bg-gray-50 rounded-xl px-4 py-3 flex items-center justify-between mb-4 border border-gray-100">
+      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl px-4 py-3 flex items-center justify-between mb-4 border border-gray-100 dark:border-gray-600">
           <div className="flex flex-col">
               <span className="text-[10px] uppercase text-gray-400 font-bold">Live</span>
-              <span className="text-sm font-bold text-gray-900">{site.contentQueue.live}</span>
+              <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{site.contentQueue.live}</span>
           </div>
-          <div className="h-6 w-px bg-gray-200"></div>
+          <div className="h-6 w-px bg-gray-200 dark:bg-gray-600"></div>
           <div className="flex flex-col text-right">
               <span className="text-[10px] uppercase text-gray-400 font-bold">Queue</span>
               <span className="text-sm font-bold text-indigo-600">{site.contentQueue.queued}</span>
@@ -104,7 +104,7 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onGeneratePost, userRole, onD
 
       {/* Actions */}
       <div className="flex gap-2 mt-auto">
-        <button className="flex-1 py-2 rounded-xl text-xs font-semibold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors">
+        <button className="flex-1 py-2 rounded-xl text-xs font-semibold text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">
             Manage
         </button>
         {canCreateContent && (

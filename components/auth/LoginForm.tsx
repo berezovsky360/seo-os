@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/lib/contexts/AuthContext'
-import { LogIn } from 'lucide-react'
+import { LogIn, Mail } from 'lucide-react'
 
 export default function LoginForm() {
   const [email, setEmail] = useState('')
@@ -12,6 +12,10 @@ export default function LoginForm() {
   const [loading, setLoading] = useState(false)
   const { signIn } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  const justRegistered = searchParams.get('registered') === 'true'
+  const redirectTo = searchParams.get('redirect')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,7 +28,7 @@ export default function LoginForm() {
       setError(error.message)
       setLoading(false)
     } else {
-      router.push('/')
+      router.push(redirectTo || '/')
     }
   }
 
@@ -44,6 +48,13 @@ export default function LoginForm() {
           <p className="text-center text-gray-500 mb-8">
             Sign in to manage your WordPress sites
           </p>
+
+          {justRegistered && (
+            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-6 flex items-center gap-2">
+              <Mail size={16} className="flex-shrink-0" />
+              Account created! Please check your email to verify, then sign in.
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
@@ -72,7 +83,7 @@ export default function LoginForm() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                placeholder="••••••••"
+                placeholder="Your password"
               />
             </div>
 

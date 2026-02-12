@@ -4,7 +4,7 @@ import {
   PlusCircle, FileText, CheckCircle, Sparkles, Activity, AlertCircle, Search,
   TrendingUp, Settings, ExternalLink, Calendar, Wifi, WifiOff,
   RefreshCw, Loader2, Globe, BarChart3, Image as ImageIcon, BookOpen, Users, Bot,
-  Database, Wand2, Timer, Rss, Send, Palette, Swords, GripVertical
+  Database, Wand2, Timer, Rss, Send, Palette, Swords, GripVertical, Microscope
 } from 'lucide-react';
 import { THEMES, THEME_COLORS } from '../constants';
 import AddSiteModal from './AddSiteModal';
@@ -81,7 +81,8 @@ const MODULE_NAV: { id: string; name: string; icon: React.ReactNode; iconBg: str
   { id: 'cron', name: 'Cron Scheduler', icon: <Timer size={18} />, iconBg: 'bg-violet-50 text-violet-600', viewState: 'cron-jobs' },
   { id: 'content-engine', name: 'Content Engine', icon: <Rss size={18} />, iconBg: 'bg-rose-50 text-rose-600', viewState: 'content-engine' },
   { id: 'telegraph', name: 'Telegraph', icon: <Send size={18} />, iconBg: 'bg-sky-50 text-sky-600', viewState: 'telegraph' },
-  { id: 'competitor-analysis', name: 'Competitors', icon: <Swords size={18} />, iconBg: 'bg-red-50 text-red-600', viewState: 'competitor-analysis' },
+  { id: 'competitor-analysis', name: 'Competitor Insight', icon: <Swords size={18} />, iconBg: 'bg-red-50 text-red-600', viewState: 'competitor-analysis' },
+  { id: 'competitor-anatomy', name: 'Competitor Anatomy', icon: <Microscope size={18} />, iconBg: 'bg-violet-50 text-violet-600', viewState: 'competitor-anatomy' },
 ];
 
 // Helper: check if a site has CMS credentials
@@ -90,7 +91,7 @@ function isSiteConnected(site: Site): boolean {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGeneratePost, userRole, onDeleteSite, onSelectSite, onChangeView }) => {
-  const canAddProperty = userRole === 'ADMIN' || userRole === 'EDITOR';
+  const canAddProperty = userRole !== 'user';
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddSiteModalOpen, setIsAddSiteModalOpen] = useState(false);
   const [syncingSiteId, setSyncingSiteId] = useState<string | null>(null);
@@ -526,9 +527,9 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
         {!isLoading && canAddProperty && (
             <button
               onClick={() => setIsAddSiteModalOpen(true)}
-              className="group relative rounded-[2rem] border-2 border-dashed border-gray-200 bg-gray-50/50 hover:bg-white hover:border-indigo-300 hover:shadow-xl transition-all duration-300 flex flex-col items-center justify-center h-[280px] cursor-pointer"
+              className="group relative rounded-[2rem] border-2 border-dashed border-gray-200 bg-gray-50/50 hover:bg-white dark:hover:bg-gray-800 hover:border-indigo-300 hover:shadow-xl transition-all duration-300 flex flex-col items-center justify-center h-[280px] cursor-pointer"
             >
-                <div className="w-16 h-16 rounded-3xl bg-white shadow-sm border border-gray-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 group-hover:shadow-md">
+                <div className="w-16 h-16 rounded-3xl bg-white dark:bg-gray-800 shadow-sm border border-gray-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 group-hover:shadow-md">
                     <PlusCircle size={32} className="text-gray-300 group-hover:text-indigo-500 transition-colors" />
                 </div>
                 <h3 className="text-lg font-bold text-gray-900 group-hover:text-indigo-600 transition-colors">Add New Project</h3>

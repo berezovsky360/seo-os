@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { X, Plus, Globe } from 'lucide-react';
 import { useCreateSite, useSites } from '@/hooks/useSites';
+import { useWorkspace } from '@/lib/contexts/WorkspaceContext';
 import { useToast } from '@/lib/contexts/ToastContext';
 import { THEME_COLORS } from '@/constants';
 
@@ -18,7 +19,8 @@ export default function AddSiteModal({ isOpen, onClose }: AddSiteModalProps) {
   const [isCompetitor, setIsCompetitor] = useState(false);
 
   const createSite = useCreateSite();
-  const { data: existingSites = [] } = useSites();
+  const { currentWorkspaceId } = useWorkspace();
+  const { data: existingSites = [] } = useSites(currentWorkspaceId || undefined);
   const toast = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,6 +52,7 @@ export default function AddSiteModal({ isOpen, onClose }: AddSiteModalProps) {
         url: normalizedUrl,
         theme,
         is_competitor: isCompetitor,
+        workspace_id: currentWorkspaceId || undefined,
       },
       {
         onSuccess: () => {

@@ -4,7 +4,35 @@ export enum SiteStatus {
   CRITICAL = 'CRITICAL'
 }
 
-export type UserRole = 'ADMIN' | 'EDITOR' | 'VIEWER';
+export type UserRole = 'super_admin' | 'admin' | 'user';
+
+export interface UserProfile {
+  id: string
+  user_id: string
+  role: UserRole
+  display_name: string | null
+  avatar_emoji: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Workspace {
+  id: string
+  user_id: string
+  name: string
+  emoji: string
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface LinkedAccount {
+  email: string
+  refresh_token: string
+  display_name: string
+  avatar_emoji: string | null
+  user_id: string
+}
 
 export interface MetricTrend {
   date: string;
@@ -21,6 +49,7 @@ export interface Site {
   wp_username?: string | null;
   wp_app_password?: string | null;
   is_competitor?: boolean;
+  workspace_id?: string | null;
   metrics: {
     speedScore: number;
     notFoundCount: number;
@@ -140,7 +169,11 @@ export type ViewState =
     | 'content-lots'
     | 'telegraph'
     | 'competitor-analysis'
-    | 'ai-writer';
+    | 'competitor-anatomy'
+    | 'ai-writer'
+    | 'task-history'
+    | 'any-chat'
+    | 'admin';
 
 export interface Article {
     id: string;
@@ -210,4 +243,44 @@ export interface Post {
     schema_article_type: string | null;
     schema_config: any | null;
     last_seo_analysis_at: string | null;
+}
+
+// ====== Any Chat types ======
+
+export type ChatPlatform = 'telegram' | 'slack' | 'discord' | 'whatsapp' | 'webchat'
+
+export interface ChatChannel {
+  id: string
+  user_id: string
+  platform: ChatPlatform
+  platform_chat_id: string
+  bot_token: string | null
+  channel_name: string | null
+  metadata: Record<string, any>
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ChatMessage {
+  id: string
+  user_id: string
+  channel_id: string
+  direction: 'outbound' | 'inbound'
+  message_type: 'text' | 'approval_request' | 'approval_response' | 'report'
+  content: string
+  metadata: Record<string, any>
+  platform_message_id: string | null
+  created_at: string
+}
+
+export interface ChatNotificationRule {
+  id: string
+  user_id: string
+  channel_id: string
+  event_pattern: string
+  site_id: string | null
+  enabled: boolean
+  template: string | null
+  created_at: string
 }

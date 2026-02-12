@@ -5,6 +5,12 @@ import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { AuthProvider } from "@/lib/contexts/AuthContext";
 import { ToastProvider } from "@/lib/contexts/ToastContext";
 import { CoreProvider } from "@/lib/contexts/CoreContext";
+import { BackgroundTaskProvider } from "@/lib/contexts/BackgroundTaskContext";
+import { ThemeProvider } from "@/lib/contexts/ThemeContext";
+import { AccountRegistryProvider } from "@/lib/contexts/AccountRegistryContext";
+import { WorkspaceProvider } from "@/lib/contexts/WorkspaceContext";
+import BackgroundTaskPanel from "@/components/BackgroundTaskPanel";
+import AccountLoginModal from "@/components/AccountLoginModal";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -25,13 +31,25 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <AuthProvider>
-          <QueryProvider>
-            <CoreProvider>
-              <ToastProvider>{children}</ToastProvider>
-            </CoreProvider>
-          </QueryProvider>
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <AccountRegistryProvider>
+              <WorkspaceProvider>
+                <QueryProvider>
+                  <CoreProvider>
+                    <BackgroundTaskProvider>
+                      <ToastProvider>
+                        {children}
+                        <BackgroundTaskPanel />
+                        <AccountLoginModal />
+                      </ToastProvider>
+                    </BackgroundTaskProvider>
+                  </CoreProvider>
+                </QueryProvider>
+              </WorkspaceProvider>
+            </AccountRegistryProvider>
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

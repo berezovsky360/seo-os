@@ -3,16 +3,55 @@ import { useRouter } from 'next/navigation';
 import { Site } from '../types';
 import { ArticleRecord } from '@/lib/services/articleService';
 import { ChevronLeft, ChevronRight, Settings, FileText, Tag, Folder, Save, CheckCircle2, CheckSquare, MoreHorizontal, Filter, Search, Globe, AlertTriangle, Monitor, Smartphone, TrendingUp, BarChart3, AlertCircle, Calendar, ChevronDown, Plus, Wifi, Trash2, Edit, Eye, GripVertical, Settings2, TrendingDown, X, Loader2, RefreshCw, Download, Puzzle, ExternalLink, Link2, Image as ImageIcon, BookOpen, Shield, Hash, Upload, RefreshCcw, Wand2, Sparkles, Palette, ShoppingBag, Layout, ArrowRightLeft, Swords } from 'lucide-react';
-import { useSite, useUpdateSite, useDeleteSite } from '@/hooks/useSites';
+import { useSite, useUpdateSite, usePatchSite, useDeleteSite } from '@/hooks/useSites';
 import { useArticles, useCreateArticle, usePublishArticleToWordPress } from '@/hooks/useArticles';
 import { useSyncPosts, usePosts } from '@/hooks/usePosts';
 import { useToast } from '@/lib/contexts/ToastContext';
 import { useCore } from '@/lib/contexts/CoreContext';
 import { useQueryClient } from '@tanstack/react-query';
+import { useBackgroundTasks } from '@/lib/contexts/BackgroundTaskContext';
 import PublishModal from './PublishModal';
 import SEOScoreIndicator from './SEOScoreIndicator';
 import AIGeneratePopover from './AIGeneratePopover';
 import RedirectManager from './modules/redirects/RedirectManager';
+import { useWorkspace } from '@/lib/contexts/WorkspaceContext';
+import { useMoveSiteToWorkspace } from '@/hooks/useWorkspaces';
+
+// ─── Move Site to Workspace Section ───
+function WorkspaceMoveSection({ siteId, currentWorkspaceId }: { siteId: string; currentWorkspaceId?: string | null }) {
+  const { workspaces } = useWorkspace();
+  const moveSite = useMoveSiteToWorkspace();
+  const toast = useToast();
+
+  if (workspaces.length <= 1) return null;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-[2rem] p-8 shadow-sm mb-6">
+      <div className="mb-4">
+        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+          <ArrowRightLeft size={20} className="text-indigo-600" />
+          Workspace
+        </h3>
+        <p className="text-sm text-gray-500 mt-1">Move this site to a different workspace.</p>
+      </div>
+      <select
+        value={currentWorkspaceId || ''}
+        onChange={(e) => {
+          moveSite.mutate(
+            { siteId, workspaceId: e.target.value },
+            { onSuccess: () => toast.success('Site moved to workspace') }
+          );
+        }}
+        disabled={moveSite.isPending}
+        className="w-full max-w-xs px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none disabled:opacity-50"
+      >
+        {workspaces.map(ws => (
+          <option key={ws.id} value={ws.id}>{ws.emoji} {ws.name}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 interface SiteDetailsProps {
     siteId: string;
@@ -124,6 +163,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
     const { data: articles = [], isLoading: articlesLoading } = useArticles(siteId);
     const { data: posts = [], isLoading: postsLoading } = usePosts(siteId);
     const updateSite = useUpdateSite();
+    const patchSite = usePatchSite();
     const deleteSite = useDeleteSite();
     const syncPosts = useSyncPosts();
     const publishArticle = usePublishArticleToWordPress();
@@ -131,9 +171,29 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
     const queryClient = useQueryClient();
     const toast = useToast();
     const { isModuleEnabled } = useCore();
+    const { tasks } = useBackgroundTasks();
     const nanaBananaEnabled = isModuleEnabled('nana-banana');
     const rmBridgeEnabled = isModuleEnabled('rankmath-bridge');
     const aiWriterEnabled = isModuleEnabled('ai-writer');
+
+    // Invalidate content queries when a bulk_generate background task completes
+    const handledBulkTaskIds = useRef(new Set<string>());
+    useEffect(() => {
+        for (const task of tasks) {
+            if (task.task_type !== 'bulk_generate') continue;
+            if (task.status !== 'completed' && task.status !== 'failed') continue;
+            if (handledBulkTaskIds.current.has(task.id)) continue;
+            handledBulkTaskIds.current.add(task.id);
+            if (task.status === 'completed') {
+                queryClient.invalidateQueries({ queryKey: ['posts'] });
+                queryClient.invalidateQueries({ queryKey: ['articles'] });
+                const result = task.result as any;
+                toast.success(`Bulk generation complete: ${result?.success || 0}/${result?.total || 0} succeeded`);
+            } else {
+                toast.error(`Bulk generation failed: ${task.error || 'Unknown error'}`);
+            }
+        }
+    }, [tasks, queryClient, toast]);
 
     // Dynamic columns based on modules
     const availableColumns = React.useMemo(
@@ -141,12 +201,11 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
         [rmBridgeEnabled, nanaBananaEnabled]
     );
 
-    // Cover Style State
+    // Cover Style State (multi-image, up to 10)
     const [coverStylePrompt, setCoverStylePrompt] = useState('');
-    const [coverReferenceUrl, setCoverReferenceUrl] = useState('');
+    const [coverReferenceUrls, setCoverReferenceUrls] = useState<string[]>([]);
     const [isAnalyzingStyle, setIsAnalyzingStyle] = useState(false);
-    const [styleImageFile, setStyleImageFile] = useState<File | null>(null);
-    const [styleImagePreview, setStyleImagePreview] = useState<string | null>(null);
+    const [pendingStyleFiles, setPendingStyleFiles] = useState<{ file: File; preview: string }[]>([]);
 
     // Cover generation in content table
     const [generatingCoverId, setGeneratingCoverId] = useState<string | null>(null);
@@ -359,69 +418,59 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
         setBulkProcessing(false);
     };
 
-    // Bulk AI generation
+    // Bulk AI generation — fires background task, progress shown in BackgroundTaskPanel
     const handleBulkGenerateTitles = async () => {
         setShowBulkStatusDropdown(false);
         if (selectedIds.size === 0) return;
-        setBulkProcessing(true);
         const items = filteredContent.filter(item => selectedIds.has(item.id));
-        setBulkProgress({ current: 0, total: items.length });
-        let success = 0;
-        for (const item of items) {
-            try {
-                const postId = item.id.replace(/^(wp-|gen-)/, '');
-                if (!postId) continue;
-                const res = await fetch('/api/ai-writer/generate-title', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ post_id: postId, site_id: siteId, keyword: item.keyword }),
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.titles?.[0]) {
-                        updateSeoEdit(item.id, 'seo_title', data.titles[0]);
-                        success++;
-                    }
-                }
-            } catch (err) {
-                console.error('Bulk title gen failed for', item.id, err);
+        const payload = items.map(item => ({
+            id: item.id,
+            post_id: item.id.replace(/^(wp-|gen-)/, ''),
+            keyword: item.keyword,
+        }));
+        try {
+            const res = await fetch('/api/ai-writer/bulk-generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: payload, action: 'titles', site_id: siteId }),
+            });
+            if (res.ok) {
+                toast.success(`Title generation started for ${items.length} items — see Background Tasks`);
+                setSelectedIds(new Set());
+            } else {
+                const data = await res.json();
+                toast.error(data.error || 'Failed to start bulk generation');
             }
-            setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        } catch (err) {
+            toast.error('Failed to start bulk generation');
         }
-        setBulkProcessing(false);
-        toast.success(`Generated titles for ${success}/${items.length} items`);
     };
 
     const handleBulkGenerateDescriptions = async () => {
         setShowBulkStatusDropdown(false);
         if (selectedIds.size === 0) return;
-        setBulkProcessing(true);
         const items = filteredContent.filter(item => selectedIds.has(item.id));
-        setBulkProgress({ current: 0, total: items.length });
-        let success = 0;
-        for (const item of items) {
-            try {
-                const postId = item.id.replace(/^(wp-|gen-)/, '');
-                if (!postId) continue;
-                const res = await fetch('/api/ai-writer/generate-description', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ post_id: postId, site_id: siteId, keyword: item.keyword }),
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.descriptions?.[0]) {
-                        updateSeoEdit(item.id, 'seo_description', data.descriptions[0]);
-                        success++;
-                    }
-                }
-            } catch (err) {
-                console.error('Bulk desc gen failed for', item.id, err);
+        const payload = items.map(item => ({
+            id: item.id,
+            post_id: item.id.replace(/^(wp-|gen-)/, ''),
+            keyword: item.keyword,
+        }));
+        try {
+            const res = await fetch('/api/ai-writer/bulk-generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: payload, action: 'descriptions', site_id: siteId }),
+            });
+            if (res.ok) {
+                toast.success(`Description generation started for ${items.length} items — see Background Tasks`);
+                setSelectedIds(new Set());
+            } else {
+                const data = await res.json();
+                toast.error(data.error || 'Failed to start bulk generation');
             }
-            setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        } catch (err) {
+            toast.error('Failed to start bulk generation');
         }
-        setBulkProcessing(false);
-        toast.success(`Generated descriptions for ${success}/${items.length} items`);
     };
 
     // Column Customization State
@@ -473,7 +522,8 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
             setWpAppPassword(site.wp_app_password || '');
             setIsConnected(!!(site.wp_username && site.wp_app_password));
             setCoverStylePrompt((site as any).cover_style_prompt || '');
-            setCoverReferenceUrl((site as any).cover_reference_url || '');
+            const refs = (site as any).cover_reference_urls;
+            setCoverReferenceUrls(Array.isArray(refs) ? refs : refs ? [refs] : []);
         }
     }, [site]);
 
@@ -1518,13 +1568,6 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                         </button>
                                         {showBulkStatusDropdown && (
                                             <div className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-xl py-1 z-30 min-w-[180px]">
-                                                {bulkProcessing ? (
-                                                    <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-500">
-                                                        <Loader2 size={14} className="animate-spin" />
-                                                        {bulkProgress.current}/{bulkProgress.total}
-                                                    </div>
-                                                ) : (
-                                                    <>
                                                         <p className="px-4 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Change Status</p>
                                                         {['draft', 'reviewed', 'published'].map(s => (
                                                             <button key={s} onClick={() => handleBulkStatusChange(s)} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 capitalize">{s}</button>
@@ -1546,8 +1589,6 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                                         <button onClick={handleBulkDelete} className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50 flex items-center gap-2"><Trash2 size={14} /> Delete</button>
                                                         <div className="border-t border-gray-100 my-1" />
                                                         <button onClick={() => setSelectedIds(new Set())} className="w-full text-left px-4 py-2 text-sm text-gray-500 hover:bg-gray-50">Deselect All</button>
-                                                    </>
-                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -2188,10 +2229,10 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                             Cover Style
                         </h3>
                         <p className="text-sm text-gray-500 mt-1">
-                            Upload a reference image to define the visual style for AI-generated covers.
+                            Upload up to 10 reference images to train the AI on your brand's visual style.
                         </p>
                     </div>
-                    {coverReferenceUrl && (
+                    {coverStylePrompt && (
                         <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
                             <CheckCircle2 size={14} />
                             Style set
@@ -2200,96 +2241,174 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                 </div>
 
                 <div className="mt-6 space-y-4">
-                    {/* Reference image preview */}
-                    {(styleImagePreview || coverReferenceUrl) && (
-                        <div className="relative w-full max-w-sm">
-                            <img
-                                src={styleImagePreview || coverReferenceUrl}
-                                alt="Style reference"
-                                className="w-full h-48 object-cover rounded-xl border border-gray-200"
-                            />
-                            {coverReferenceUrl && !styleImagePreview && (
-                                <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                    Current reference
-                                </div>
-                            )}
+                    {/* Saved reference images grid */}
+                    {coverReferenceUrls.length > 0 && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Saved References ({coverReferenceUrls.length}/10)
+                            </label>
+                            <div className="grid grid-cols-5 gap-3">
+                                {coverReferenceUrls.map((url, idx) => (
+                                    <div key={idx} className="relative group">
+                                        <img
+                                            src={url}
+                                            alt={`Style reference ${idx + 1}`}
+                                            className="w-full h-24 object-cover rounded-xl border border-gray-200"
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                const updated = coverReferenceUrls.filter((_, i) => i !== idx);
+                                                setCoverReferenceUrls(updated);
+                                                patchSite.mutate({
+                                                    siteId,
+                                                    updates: { cover_reference_urls: updated },
+                                                });
+                                            }}
+                                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                                        >
+                                            <X size={10} />
+                                        </button>
+                                        <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                                            {idx + 1}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
 
-                    {/* File input */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Reference Image</label>
-                        <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                    setStyleImageFile(file);
-                                    const reader = new FileReader();
-                                    reader.onload = (ev) => setStyleImagePreview(ev.target?.result as string);
-                                    reader.readAsDataURL(file);
-                                }
-                            }}
-                            className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-yellow-50 file:text-yellow-700 hover:file:bg-yellow-100 file:cursor-pointer"
-                        />
-                    </div>
+                    {/* Pending files preview */}
+                    {pendingStyleFiles.length > 0 && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                New images to add ({pendingStyleFiles.length})
+                            </label>
+                            <div className="grid grid-cols-5 gap-3">
+                                {pendingStyleFiles.map((item, idx) => (
+                                    <div key={idx} className="relative group">
+                                        <img
+                                            src={item.preview}
+                                            alt={`New reference ${idx + 1}`}
+                                            className="w-full h-24 object-cover rounded-xl border-2 border-yellow-300 border-dashed"
+                                        />
+                                        <button
+                                            onClick={() => setPendingStyleFiles(prev => prev.filter((_, i) => i !== idx))}
+                                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                                        >
+                                            <X size={10} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* File input — multi-select */}
+                    {(coverReferenceUrls.length + pendingStyleFiles.length) < 10 && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Add Reference Images ({10 - coverReferenceUrls.length - pendingStyleFiles.length} remaining)
+                            </label>
+                            <input
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                onChange={(e) => {
+                                    const files = Array.from(e.target.files || []);
+                                    const maxNew = 10 - coverReferenceUrls.length - pendingStyleFiles.length;
+                                    const toAdd = files.slice(0, maxNew);
+
+                                    toAdd.forEach(file => {
+                                        const reader = new FileReader();
+                                        reader.onload = (ev) => {
+                                            setPendingStyleFiles(prev => {
+                                                if (prev.length + coverReferenceUrls.length >= 10) return prev;
+                                                return [...prev, { file, preview: ev.target?.result as string }];
+                                            });
+                                        };
+                                        reader.readAsDataURL(file);
+                                    });
+                                    e.target.value = '';
+                                }}
+                                className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-yellow-50 file:text-yellow-700 hover:file:bg-yellow-100 file:cursor-pointer"
+                            />
+                        </div>
+                    )}
 
                     {/* Upload & Analyze button */}
                     <button
                         onClick={async () => {
-                            if (!styleImageFile) {
-                                toast.warning('Select a reference image first');
+                            // Gather all images: saved + new pending
+                            const allPreviews = [...coverReferenceUrls];
+                            const newBase64List: string[] = [];
+
+                            if (pendingStyleFiles.length === 0 && coverReferenceUrls.length === 0) {
+                                toast.warning('Add at least one reference image');
                                 return;
                             }
+
                             setIsAnalyzingStyle(true);
                             try {
-                                // Convert to base64
-                                const arrayBuffer = await styleImageFile.arrayBuffer();
-                                const base64 = btoa(
-                                    new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-                                );
+                                // Convert pending files to base64
+                                for (const item of pendingStyleFiles) {
+                                    const arrayBuffer = await item.file.arrayBuffer();
+                                    const base64 = btoa(
+                                        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+                                    );
+                                    newBase64List.push(base64);
+                                    allPreviews.push(`data:${item.file.type};base64,${base64}`);
+                                }
 
-                                // Analyze style (the API route also saves cover_style_prompt to DB)
+                                // Extract base64 from saved data URLs too
+                                const savedBase64List = coverReferenceUrls.map(url => {
+                                    const match = url.match(/^data:[^;]+;base64,(.+)$/);
+                                    return match ? match[1] : '';
+                                }).filter(Boolean);
+
+                                const allBase64 = [...savedBase64List, ...newBase64List];
+
+                                // Analyze all images together
                                 const res = await fetch('/api/nana-banana/analyze-style', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ site_id: siteId, image_base64: base64 }),
+                                    body: JSON.stringify({ site_id: siteId, images: allBase64 }),
                                 });
                                 const data = await res.json();
                                 if (!res.ok) throw new Error(data.error || 'Failed to analyze style');
 
                                 setCoverStylePrompt(data.style_prompt);
 
-                                // Save reference as data URL for preview (no WP upload needed for reference)
-                                const dataUrl = `data:${styleImageFile.type};base64,${base64}`;
-                                setCoverReferenceUrl(dataUrl);
-                                updateSite.mutate({
+                                // Save all reference URLs (data URLs for preview)
+                                setCoverReferenceUrls(allPreviews);
+                                patchSite.mutate({
                                     siteId,
-                                    updates: { cover_reference_url: dataUrl } as any,
+                                    updates: { cover_reference_urls: allPreviews },
                                 });
 
-                                setStyleImageFile(null);
-                                setStyleImagePreview(null);
-                                toast.success('Style analyzed and saved!');
+                                setPendingStyleFiles([]);
+                                toast.success(`Style analyzed from ${allBase64.length} image${allBase64.length > 1 ? 's' : ''}!`);
                             } catch (error) {
                                 toast.error(`Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
                             } finally {
                                 setIsAnalyzingStyle(false);
                             }
                         }}
-                        disabled={!styleImageFile || isAnalyzingStyle}
+                        disabled={(pendingStyleFiles.length === 0 && coverReferenceUrls.length === 0) || isAnalyzingStyle}
                         className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-yellow-400 to-orange-500 text-white font-semibold rounded-xl text-sm hover:from-yellow-500 hover:to-orange-600 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isAnalyzingStyle ? (
                             <>
                                 <Loader2 size={16} className="animate-spin" />
-                                Analyzing style...
+                                Analyzing {coverReferenceUrls.length + pendingStyleFiles.length} image{(coverReferenceUrls.length + pendingStyleFiles.length) > 1 ? 's' : ''}...
                             </>
                         ) : (
                             <>
                                 <Sparkles size={16} />
-                                Upload & Analyze Style
+                                {pendingStyleFiles.length > 0
+                                    ? `Upload & Analyze ${coverReferenceUrls.length + pendingStyleFiles.length} Images`
+                                    : coverReferenceUrls.length > 0
+                                        ? `Re-analyze ${coverReferenceUrls.length} Image${coverReferenceUrls.length > 1 ? 's' : ''}`
+                                        : 'Upload & Analyze Style'}
                             </>
                         )}
                     </button>
@@ -2310,9 +2429,9 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                                 </p>
                                 <button
                                     onClick={() => {
-                                        updateSite.mutate({
+                                        patchSite.mutate({
                                             siteId,
-                                            updates: { cover_style_prompt: coverStylePrompt } as any,
+                                            updates: { cover_style_prompt: coverStylePrompt },
                                         }, {
                                             onSuccess: () => toast.success('Style prompt saved'),
                                             onError: () => toast.error('Failed to save style prompt'),
@@ -2329,6 +2448,9 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({ siteId, onBack }) => {
                 </div>
             </div>
             )}
+
+            {/* Move to Workspace */}
+            <WorkspaceMoveSection siteId={siteId} currentWorkspaceId={site?.workspace_id} />
 
             {/* Danger Zone */}
             <div className="bg-white border border-red-200 rounded-[2rem] p-8 shadow-sm">

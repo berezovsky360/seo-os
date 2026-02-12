@@ -14,9 +14,10 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await request.json()
-    const { site_id, image_base64 } = body
-    if (!site_id || !image_base64) {
-      return NextResponse.json({ error: 'Missing site_id or image_base64' }, { status: 400 })
+    const { site_id, image_base64, images } = body
+    // Support both: new multi-image `images` array and legacy single `image_base64`
+    if (!site_id || (!image_base64 && (!images || !images.length))) {
+      return NextResponse.json({ error: 'Missing site_id or images' }, { status: 400 })
     }
 
     const serviceClient = createServiceClient(
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
     }
 
     const module = new NanaBananaModule()
-    const result = await module.executeAction('analyze_style', { site_id, image_base64 }, context)
+    const result = await module.executeAction('analyze_style', { site_id, images: images || [image_base64] }, context)
 
     return NextResponse.json(result)
   } catch (error) {

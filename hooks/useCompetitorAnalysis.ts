@@ -95,6 +95,7 @@ export interface PrecheckResult {
   keywords_top10: number
   referring_domains: number
   backlinks_count: number
+  cost_breakdown: Record<string, number>
   estimated_credits: number
   balance: number
 }
@@ -268,8 +269,6 @@ export function useTopPages(competitorId: string) {
 }
 
 export function useDiscoverCompetitors() {
-  const queryClient = useQueryClient()
-
   return useMutation({
     mutationFn: async ({ siteId }: { siteId: string }) => {
       const res = await fetch('/api/competitor-analysis/discover', {
@@ -281,10 +280,7 @@ export function useDiscoverCompetitors() {
         const data = await res.json()
         throw new Error(data.error || 'Failed to discover competitors')
       }
-      return res.json()
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['competitor-discoveries', variables.siteId] })
+      return res.json() as Promise<{ task_id: string; status: string }>
     },
   })
 }
@@ -321,10 +317,8 @@ export function useContentGap(siteId: string, competitorId: string) {
 }
 
 export function useDeepAnalysis() {
-  const queryClient = useQueryClient()
-
   return useMutation({
-    mutationFn: async ({ competitorId, siteId }: { competitorId: string; siteId: string }) => {
+    mutationFn: async ({ competitorId }: { competitorId: string; siteId: string }) => {
       const res = await fetch('/api/competitor-analysis/deep-analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -334,12 +328,7 @@ export function useDeepAnalysis() {
         const data = await res.json()
         throw new Error(data.error || 'Deep analysis failed')
       }
-      return { ...(await res.json()), siteId }
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['competitors', data.siteId] })
-      queryClient.invalidateQueries({ queryKey: ['competitor-top-pages'] })
-      queryClient.invalidateQueries({ queryKey: ['competitor-snapshots'] })
+      return res.json() as Promise<{ task_id: string; status: string }>
     },
   })
 }

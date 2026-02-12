@@ -19,6 +19,7 @@ export interface ModuleContext {
   apiKeys: Record<string, string> // Decrypted keys available to this module
   supabase: SupabaseClient        // Service-role client for DB operations
   emitEvent: (event: CoreEvent) => Promise<void> // Emit follow-up events into the bus
+  settings?: Record<string, any>  // Per-module user settings from modules_config.settings
 }
 
 // ====== Action Parameter Definition ======

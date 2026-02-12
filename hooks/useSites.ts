@@ -4,10 +4,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { siteService, type SiteRecord } from '@/lib/services/siteService'
 import type { Site } from '@/types'
 
-export function useSites() {
+export function useSites(workspaceId?: string) {
   return useQuery({
-    queryKey: ['sites'],
-    queryFn: () => siteService.getAllSites(),
+    queryKey: ['sites', { workspaceId }],
+    queryFn: () => siteService.getAllSites(workspaceId),
   })
 }
 
@@ -30,6 +30,7 @@ export function useCreateSite() {
       wp_username?: string
       wp_app_password?: string
       is_competitor?: boolean
+      workspace_id?: string
     }) => siteService.createSite(site),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites'] })
@@ -43,6 +44,19 @@ export function useUpdateSite() {
   return useMutation({
     mutationFn: ({ siteId, updates }: { siteId: string; updates: Partial<SiteRecord> }) =>
       siteService.updateSite(siteId, updates),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['sites'] })
+      queryClient.invalidateQueries({ queryKey: ['sites', variables.siteId] })
+    },
+  })
+}
+
+export function usePatchSite() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ siteId, updates }: { siteId: string; updates: Partial<SiteRecord> }) =>
+      siteService.patchSite(siteId, updates),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['sites'] })
       queryClient.invalidateQueries({ queryKey: ['sites', variables.siteId] })

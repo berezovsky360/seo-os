@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import {
   Globe, Sparkles, Search, BarChart3, Image as ImageIcon,
   Loader2, AlertCircle, ChevronLeft, Store, Settings, X, ShieldAlert,
-  BookOpen, Users, Bot, Database, Wand2, FileText, Download, Timer, Rss, Send
+  BookOpen, Users, Bot, Database, Wand2, FileText, Download, Timer, Rss, Send, Swords, Microscope, MessageCircle
 } from 'lucide-react';
 import { useCore } from '@/lib/contexts/CoreContext';
 import { useToggleModule } from '@/hooks/useModules';
@@ -189,6 +189,39 @@ const MODULE_CARDS: {
     requiredKeys: [],
     status: 'ready',
     viewState: 'telegraph',
+  },
+  {
+    id: 'competitor-analysis',
+    name: 'Competitor Insight',
+    description: 'Domain-level competitive analysis: keyword gaps, traffic estimates, top pages, and content gaps via DataForSEO Labs API.',
+    icon: <Swords size={24} />,
+    iconBg: 'bg-red-50 text-red-600',
+    gradient: 'from-red-500 to-orange-500',
+    requiredKeys: ['dataforseo'],
+    status: 'ready',
+    viewState: 'competitor-analysis',
+  },
+  {
+    id: 'competitor-anatomy',
+    name: 'Competitor Anatomy',
+    description: 'Page-level technical SEO analysis: crawl competitor sites, audit every page, detect duplicate content, redirects, and SEO issues.',
+    icon: <Microscope size={24} />,
+    iconBg: 'bg-violet-50 text-violet-600',
+    gradient: 'from-violet-500 to-purple-600',
+    requiredKeys: ['dataforseo'],
+    status: 'ready',
+    viewState: 'competitor-anatomy',
+  },
+  {
+    id: 'any-chat',
+    name: 'Any Chat',
+    description: 'Unified messaging hub: receive notifications, reports, and human-in-the-loop approvals via Telegram, Slack, Discord.',
+    icon: <MessageCircle size={24} />,
+    iconBg: 'bg-emerald-50 text-emerald-600',
+    gradient: 'from-emerald-500 to-teal-500',
+    requiredKeys: [],
+    status: 'ready',
+    viewState: 'any-chat',
   },
 ];
 

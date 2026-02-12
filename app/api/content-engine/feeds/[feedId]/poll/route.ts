@@ -42,11 +42,22 @@ export async function POST(
             url: item.link,
             content: item.content,
             published_at: item.pubDate,
+            image_url: item.imageUrl,
             status: 'ingested',
           },
           { onConflict: 'feed_id,guid', ignoreDuplicates: true }
         )
       if (!error) newCount++
+
+      // Backfill image_url for existing items that were ingested before image extraction
+      if (item.imageUrl) {
+        await supabase
+          .from('content_items')
+          .update({ image_url: item.imageUrl })
+          .eq('feed_id', feed.id)
+          .eq('guid', item.guid)
+          .is('image_url', null)
+      }
     }
 
     await supabase

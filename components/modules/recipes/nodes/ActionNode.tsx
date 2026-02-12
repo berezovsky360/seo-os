@@ -1,10 +1,31 @@
 'use client'
 
+import { useMemo } from 'react'
 import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react'
-import { Play } from 'lucide-react'
+import { Play, Newspaper, Brain, Shield, BarChart3, LineChart, Image, PenTool, Users, Swords } from 'lucide-react'
 import type { ActionNodeData } from '@/lib/modules/recipes/flow-types'
 
-const MODULES: { id: string; label: string; actions: { id: string; label: string }[] }[] = [
+// Full explicit classes — Tailwind purge needs static strings
+export const MODULE_STYLES: Record<string, {
+  icon: React.ComponentType<any>
+  iconColor: string; iconBg: string; headerBg: string
+  labelColor: string; handleBg: string
+  selectedBorder: string; selectedShadow: string; selectedRing: string
+}> = {
+  'content-engine':      { icon: Newspaper,  iconColor: 'text-amber-600',   iconBg: 'bg-amber-100',   headerBg: 'bg-amber-50',   labelColor: 'text-amber-700',   handleBg: '!bg-amber-500',   selectedBorder: 'border-amber-400',   selectedShadow: 'shadow-amber-100',   selectedRing: 'ring-amber-200' },
+  'gemini-architect':    { icon: Brain,      iconColor: 'text-violet-600',  iconBg: 'bg-violet-100',  headerBg: 'bg-violet-50',  labelColor: 'text-violet-700',  handleBg: '!bg-violet-500',  selectedBorder: 'border-violet-400',  selectedShadow: 'shadow-violet-100',  selectedRing: 'ring-violet-200' },
+  'rankmath-bridge':     { icon: Shield,     iconColor: 'text-emerald-600', iconBg: 'bg-emerald-100', headerBg: 'bg-emerald-50', labelColor: 'text-emerald-700', handleBg: '!bg-emerald-500', selectedBorder: 'border-emerald-400', selectedShadow: 'shadow-emerald-100', selectedRing: 'ring-emerald-200' },
+  'rank-pulse':          { icon: BarChart3,  iconColor: 'text-orange-600',  iconBg: 'bg-orange-100',  headerBg: 'bg-orange-50',  labelColor: 'text-orange-700',  handleBg: '!bg-orange-500',  selectedBorder: 'border-orange-400',  selectedShadow: 'shadow-orange-100',  selectedRing: 'ring-orange-200' },
+  'gsc-insights':        { icon: LineChart,  iconColor: 'text-blue-600',    iconBg: 'bg-blue-100',    headerBg: 'bg-blue-50',    labelColor: 'text-blue-700',    handleBg: '!bg-blue-500',    selectedBorder: 'border-blue-400',    selectedShadow: 'shadow-blue-100',    selectedRing: 'ring-blue-200' },
+  'nana-banana':         { icon: Image,      iconColor: 'text-pink-600',    iconBg: 'bg-pink-100',    headerBg: 'bg-pink-50',    labelColor: 'text-pink-700',    handleBg: '!bg-pink-500',    selectedBorder: 'border-pink-400',    selectedShadow: 'shadow-pink-100',    selectedRing: 'ring-pink-200' },
+  'ai-writer':           { icon: PenTool,    iconColor: 'text-indigo-600',  iconBg: 'bg-indigo-100',  headerBg: 'bg-indigo-50',  labelColor: 'text-indigo-700',  handleBg: '!bg-indigo-500',  selectedBorder: 'border-indigo-400',  selectedShadow: 'shadow-indigo-100',  selectedRing: 'ring-indigo-200' },
+  'personas':            { icon: Users,      iconColor: 'text-cyan-600',    iconBg: 'bg-cyan-100',    headerBg: 'bg-cyan-50',    labelColor: 'text-cyan-700',    handleBg: '!bg-cyan-500',    selectedBorder: 'border-cyan-400',    selectedShadow: 'shadow-cyan-100',    selectedRing: 'ring-cyan-200' },
+  'competitor-analysis': { icon: Swords,     iconColor: 'text-red-600',     iconBg: 'bg-red-100',     headerBg: 'bg-red-50',     labelColor: 'text-red-700',     handleBg: '!bg-red-500',     selectedBorder: 'border-red-400',     selectedShadow: 'shadow-red-100',     selectedRing: 'ring-red-200' },
+}
+
+export const RECIPE_MODULES_STORAGE_KEY = 'recipe-enabled-modules'
+
+export const ALL_MODULES: { id: string; label: string; actions: { id: string; label: string }[] }[] = [
   {
     id: 'content-engine',
     label: 'Content Engine',
@@ -96,23 +117,39 @@ const MODULES: { id: string; label: string; actions: { id: string; label: string
   },
 ]
 
+function getEnabledModules() {
+  if (typeof window === 'undefined') return ALL_MODULES
+  try {
+    const stored = localStorage.getItem(RECIPE_MODULES_STORAGE_KEY)
+    if (!stored) return ALL_MODULES
+    const enabled: string[] = JSON.parse(stored)
+    return ALL_MODULES.filter(m => enabled.includes(m.id))
+  } catch {
+    return ALL_MODULES
+  }
+}
+
 export function ActionNode({ id, data, selected }: NodeProps) {
   const nodeData = data as ActionNodeData
   const { updateNodeData } = useReactFlow()
 
-  const selectedModule = MODULES.find(m => m.id === nodeData.module)
+  const visibleModules = useMemo(() => getEnabledModules(), [])
+  const selectedModule = ALL_MODULES.find(m => m.id === nodeData.module)
   const actions = selectedModule?.actions || []
   const selectedAction = actions.find(a => a.id === nodeData.action)
 
+  const s = nodeData.module ? MODULE_STYLES[nodeData.module] : null
+  const IconComponent = s?.icon || Play
+
   return (
-    <div className={`min-w-[260px] rounded-xl border bg-white shadow-md transition-shadow ${selected ? 'border-emerald-400 shadow-lg shadow-emerald-100 ring-2 ring-emerald-200' : 'border-gray-200'}`}>
-      <Handle type="target" position={Position.Top} className="!bg-emerald-500 !w-3 !h-3 !border-2 !border-white" />
-      <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2 bg-emerald-50 rounded-t-xl">
-        <div className="w-6 h-6 rounded-md bg-emerald-100 flex items-center justify-center">
-          <Play size={14} className="text-emerald-600" />
+    <div className={`min-w-[260px] rounded-xl border bg-white shadow-md transition-shadow ${selected ? `${s?.selectedBorder || 'border-emerald-400'} shadow-lg ${s?.selectedShadow || 'shadow-emerald-100'} ring-2 ${s?.selectedRing || 'ring-emerald-200'}` : 'border-gray-200'}`}>
+      <Handle type="target" position={Position.Top} className={`!w-3 !h-3 !border-2 !border-white ${s?.handleBg || '!bg-emerald-500'}`} />
+      <div className={`px-4 py-2.5 border-b border-gray-100 flex items-center gap-2 ${s?.headerBg || 'bg-emerald-50'} rounded-t-xl`}>
+        <div className={`w-6 h-6 rounded-md ${s?.iconBg || 'bg-emerald-100'} flex items-center justify-center`}>
+          <IconComponent size={14} className={s?.iconColor || 'text-emerald-600'} />
         </div>
-        <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
-          {selectedAction ? selectedAction.label : 'Do this'}
+        <span className={`text-xs font-bold uppercase tracking-wider ${s?.labelColor || 'text-emerald-700'}`}>
+          {selectedAction ? selectedAction.label : selectedModule ? selectedModule.label : 'Do this'}
         </span>
       </div>
       <div className="px-4 py-3 space-y-2">
@@ -124,7 +161,7 @@ export function ActionNode({ id, data, selected }: NodeProps) {
             className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-800 outline-none cursor-pointer focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
           >
             <option value="">Choose a module...</option>
-            {MODULES.map(mod => (
+            {visibleModules.map(mod => (
               <option key={mod.id} value={mod.id}>{mod.label}</option>
             ))}
           </select>
@@ -145,7 +182,7 @@ export function ActionNode({ id, data, selected }: NodeProps) {
           </div>
         )}
       </div>
-      <Handle type="source" position={Position.Bottom} className="!bg-emerald-500 !w-3 !h-3 !border-2 !border-white" />
+      <Handle type="source" position={Position.Bottom} className={`!w-3 !h-3 !border-2 !border-white ${s?.handleBg || '!bg-emerald-500'}`} />
     </div>
   )
 }

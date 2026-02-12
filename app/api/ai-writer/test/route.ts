@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { decrypt, getEncryptionKey } from '@/lib/utils/encryption'
+import { DEFAULT_MODEL } from '@/lib/modules/ai-writer/pricing'
 
 export async function POST() {
   try {
@@ -28,11 +29,21 @@ export async function POST() {
     const encryptionKey = getEncryptionKey()
     const decryptedKey = await decrypt(keyRow.encrypted_value, encryptionKey)
 
+    // Fetch user's model preference
+    const { data: moduleConfig } = await serviceClient
+      .from('modules_config')
+      .select('settings')
+      .eq('user_id', user.id)
+      .eq('module_id', 'ai-writer')
+      .single()
+
+    const model = moduleConfig?.settings?.model || DEFAULT_MODEL
+
     const { GoogleGenAI } = await import('@google/genai')
     const ai = new GoogleGenAI({ apiKey: decryptedKey })
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model,
       contents: 'Respond with exactly: "AI Writer connection OK"',
       config: { temperature: 0, maxOutputTokens: 20 },
     })
@@ -41,7 +52,8 @@ export async function POST() {
 
     return NextResponse.json({
       success: true,
-      message: `Gemini connected successfully. Model: gemini-2.5-flash`,
+      message: `Gemini connected successfully. Model: ${model}`,
+      model,
       response: text,
     })
   } catch (error) {

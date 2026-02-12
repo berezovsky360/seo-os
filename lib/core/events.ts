@@ -26,7 +26,9 @@ export type ModuleId =
   | 'cron'
   | 'content-engine'
   | 'telegraph'
+  | 'any-chat'
   | 'competitor-analysis'
+  | 'competitor-anatomy'
 
 // ====== API Key Types ======
 
@@ -124,9 +126,57 @@ export type EventType =
   | 'competitor.competitors_discovered'
   | 'competitor.content_gap_analyzed'
   | 'competitor.deep_analysis_completed'
+  // Any Chat events
+  | 'chat.message_sent'
+  | 'chat.message_received'
+  | 'chat.approval_requested'
+  | 'chat.approval_responded'
+  | 'chat.channel_connected'
   // Sub-Recipe events (inter-recipe communication)
   | 'recipe.sub_recipe_started'
   | 'recipe.sub_recipe_completed'
+  // Background Task events
+  | 'task.created'
+  | 'task.started'
+  | 'task.progress'
+  | 'task.completed'
+  | 'task.failed'
+  // Competitor Anatomy events (On-Page API)
+  | 'anatomy.crawl_started'
+  | 'anatomy.crawl_progress'
+  | 'anatomy.crawl_completed'
+  | 'anatomy.crawl_failed'
+  | 'anatomy.instant_audit_completed'
+  | 'anatomy.issues_found'
+
+// ====== Background Task Types ======
+
+export type BackgroundTaskStatus = 'queued' | 'running' | 'completed' | 'failed'
+
+export type BackgroundTaskType =
+  | 'deep_analysis'
+  | 'article_generation'
+  | 'image_generation'
+  | 'keyword_fetch'
+  | 'competitor_discover'
+  | 'content_pipeline'
+  | 'onpage_crawl'
+  | 'bulk_generate'
+
+export interface BackgroundTask {
+  id: string
+  user_id: string
+  task_type: BackgroundTaskType
+  title: string
+  status: BackgroundTaskStatus
+  progress: number
+  result: Record<string, any> | null
+  error: string | null
+  metadata: Record<string, any>
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+}
 
 // ====== Event Severity ======
 

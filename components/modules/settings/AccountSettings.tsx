@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react'
 import {
   ChevronLeft, User, Shield, Monitor, Clock, Key, Trash2,
   AlertTriangle, Loader2, Smartphone, Globe, CheckCircle2,
-  Laptop, X,
+  Laptop, X, MapPin,
 } from 'lucide-react'
 import type { ViewState } from '@/types'
 import { useAuth } from '@/lib/contexts/AuthContext'
@@ -248,10 +248,21 @@ export default function AccountSettings({ onBack, onChangeView }: AccountSetting
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        <Globe size={10} className="inline mr-1" />
-                        {session.ip_address || 'Unknown IP'} &middot; {session.last_active_at ? new Date(session.last_active_at).toLocaleDateString() : 'Unknown'}
-                      </p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span className="text-xs text-gray-500 flex items-center gap-1">
+                          <Globe size={10} />
+                          {session.ip_address || 'Unknown IP'}
+                        </span>
+                        {(session.city || session.country) && (
+                          <span className="text-xs text-gray-500 flex items-center gap-1">
+                            <MapPin size={10} />
+                            {[session.city, session.country].filter(Boolean).join(', ')}
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-400">
+                          {session.last_active_at ? new Date(session.last_active_at).toLocaleDateString() : 'Unknown'}
+                        </span>
+                      </div>
                     </div>
                     {!session.is_current && (
                       <button
@@ -285,6 +296,7 @@ export default function AccountSettings({ onBack, onChangeView }: AccountSetting
                   <tr className="border-b border-gray-100">
                     <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-3">Date</th>
                     <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-3">IP Address</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-3 hidden md:table-cell">Location</th>
                     <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-3 hidden sm:table-cell">Device</th>
                     <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider pb-3">Status</th>
                   </tr>
@@ -296,6 +308,11 @@ export default function AccountSettings({ onBack, onChangeView }: AccountSetting
                         {new Date(entry.logged_in_at).toLocaleString()}
                       </td>
                       <td className="py-3 text-gray-500 font-mono text-xs">{entry.ip_address || '—'}</td>
+                      <td className="py-3 text-gray-500 text-xs hidden md:table-cell">
+                        {(entry.city || entry.country)
+                          ? [entry.city, entry.country].filter(Boolean).join(', ')
+                          : '—'}
+                      </td>
                       <td className="py-3 text-gray-500 hidden sm:table-cell">{entry.device_label || '—'}</td>
                       <td className="py-3 text-right">
                         <span className={`text-xs font-bold px-2 py-1 rounded-lg ${

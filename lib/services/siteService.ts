@@ -17,8 +17,12 @@ export interface SiteRecord {
   language: string
   is_active: boolean
   is_competitor: boolean
+  cover_style_prompt: string | null
+  cover_reference_urls: string[] | null
   created_at: string
   updated_at: string
+  workspace_id: string | null
+  [key: string]: any
 }
 
 // Transform DB record to App type
@@ -62,14 +66,20 @@ function transformSiteRecord(record: SiteRecord): Partial<Site> {
 }
 
 export const siteService = {
-  // Get all sites for current user
-  async getAllSites(): Promise<Site[]> {
-    const { data, error } = await supabase
+  // Get all sites for current user, optionally filtered by workspace
+  async getAllSites(workspaceId?: string): Promise<Site[]> {
+    let query = supabase
       .from('sites')
       .select('*')
       .eq('is_active', true)
       .order('display_order', { ascending: true })
       .order('created_at', { ascending: false })
+
+    if (workspaceId) {
+      query = query.eq('workspace_id', workspaceId)
+    }
+
+    const { data, error } = await query
 
     if (error) {
       console.error('Error fetching sites:', error)
@@ -103,6 +113,7 @@ export const siteService = {
     wp_username?: string
     wp_app_password?: string
     is_competitor?: boolean
+    workspace_id?: string
   }): Promise<Site> {
     const { data: { user } } = await supabase.auth.getUser()
 
@@ -120,7 +131,8 @@ export const siteService = {
         wp_username: site.wp_username,
         wp_app_password: site.wp_app_password,
         is_competitor: site.is_competitor || false,
-        is_active: true
+        is_active: true,
+        workspace_id: site.workspace_id || null,
       })
       .select()
       .single()
@@ -148,6 +160,19 @@ export const siteService = {
     }
 
     return transformSiteRecord(data) as Site
+  },
+
+  // Lightweight update — no .select().single() so it works even when rows contain large data
+  async patchSite(siteId: string, updates: Partial<SiteRecord>): Promise<void> {
+    const { error } = await supabase
+      .from('sites')
+      .update(updates)
+      .eq('id', siteId)
+
+    if (error) {
+      console.error('Error patching site:', error)
+      throw new Error(`Failed to update site: ${error.message}`)
+    }
   },
 
   // Delete site (soft delete)

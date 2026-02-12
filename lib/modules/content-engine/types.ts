@@ -6,6 +6,7 @@ export interface FeedItem {
   link: string | null
   content: string | null
   pubDate: string | null
+  imageUrl: string | null
 }
 
 export interface ContentFeed {
@@ -39,6 +40,7 @@ export interface ContentItem {
   extracted_keywords: string[]
   fact_check_results: FactCheckResults | null
   cluster_id: string | null
+  image_url: string | null
   status: ContentItemStatus
   created_at: string
 }
@@ -102,6 +104,7 @@ export interface PipelineRun {
   seo_description: string | null
   word_count: number | null
   error: string | null
+  scheduled_publish_at: string | null
   started_at: string
   completed_at: string | null
 }

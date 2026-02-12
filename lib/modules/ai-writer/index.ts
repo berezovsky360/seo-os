@@ -12,6 +12,7 @@
 import type { CoreEvent, EventType, ApiKeyType } from '@/lib/core/events'
 import type { SEOModule, ModuleAction, ModuleContext, ModuleSidebarConfig } from '@/lib/core/module-interface'
 import { PersonasModule } from '@/lib/modules/personas'
+import { DEFAULT_MODEL } from './pricing'
 
 export class AIWriterModule implements SEOModule {
   id = 'ai-writer' as const
@@ -116,6 +117,10 @@ export class AIWriterModule implements SEOModule {
 
   // ====== Helpers ======
 
+  private getModel(context: ModuleContext): string {
+    return context.settings?.model || DEFAULT_MODEL
+  }
+
   private async getGeminiClient(context: ModuleContext) {
     const geminiKey = context.apiKeys['gemini']
     if (!geminiKey) throw new Error('Gemini API key not configured')
@@ -215,14 +220,23 @@ Requirements:
 Return ONLY valid JSON in this exact format:
 {"titles": ["Title Option 1", "Title Option 2", "Title Option 3"]}`
 
+    const model = this.getModel(context)
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model,
       contents: prompt,
     })
 
     const responseText = response.text?.trim() || '{}'
     const cleaned = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const result = JSON.parse(cleaned)
+
+    const usage = response.usageMetadata
+    const usageData = {
+      model,
+      prompt_tokens: usage?.promptTokenCount || 0,
+      output_tokens: usage?.candidatesTokenCount || 0,
+      total_tokens: usage?.totalTokenCount || 0,
+    }
 
     await context.emitEvent({
       event_type: 'writer.title_generated',
@@ -234,6 +248,7 @@ Return ONLY valid JSON in this exact format:
     return {
       titles: result.titles || [],
       selected: result.titles?.[0] || '',
+      usage: usageData,
     }
   }
 
@@ -281,14 +296,23 @@ Requirements:
 Return ONLY valid JSON in this exact format:
 {"descriptions": ["Description 1", "Description 2", "Description 3"]}`
 
+    const model = this.getModel(context)
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model,
       contents: prompt,
     })
 
     const responseText = response.text?.trim() || '{}'
     const cleaned = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const result = JSON.parse(cleaned)
+
+    const usage = response.usageMetadata
+    const usageData = {
+      model,
+      prompt_tokens: usage?.promptTokenCount || 0,
+      output_tokens: usage?.candidatesTokenCount || 0,
+      total_tokens: usage?.totalTokenCount || 0,
+    }
 
     await context.emitEvent({
       event_type: 'writer.description_generated',
@@ -300,6 +324,7 @@ Return ONLY valid JSON in this exact format:
     return {
       descriptions: result.descriptions || [],
       selected: result.descriptions?.[0] || '',
+      usage: usageData,
     }
   }
 
@@ -351,14 +376,23 @@ Return ONLY valid JSON:
   "content": "<h2>...</h2><p>...</p>..."
 }`
 
+    const model = this.getModel(context)
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model,
       contents: prompt,
     })
 
     const responseText = response.text?.trim() || '{}'
     const cleaned = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const result = JSON.parse(cleaned)
+
+    const usage = response.usageMetadata
+    const usageData = {
+      model,
+      prompt_tokens: usage?.promptTokenCount || 0,
+      output_tokens: usage?.candidatesTokenCount || 0,
+      total_tokens: usage?.totalTokenCount || 0,
+    }
 
     await context.emitEvent({
       event_type: 'writer.content_generated',
@@ -367,6 +401,6 @@ Return ONLY valid JSON:
       site_id,
     })
 
-    return result
+    return { ...result, usage: usageData }
   }
 }

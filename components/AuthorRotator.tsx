@@ -50,7 +50,7 @@ const AuthorRotator: React.FC<AuthorRotatorProps> = ({ userRole, onBack }) => {
     const [editorOpen, setEditorOpen] = useState(false);
     const [editingPersona, setEditingPersona] = useState<PersonaDB | null>(null);
 
-    const canEdit = userRole === 'ADMIN' || userRole === 'EDITOR';
+    const canEdit = userRole !== 'user';
     const toast = useToast();
 
     // Real data from Supabase

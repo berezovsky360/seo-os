@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const limit = parseInt(searchParams.get('limit') || '20', 10)
+    const feedIds = searchParams.get('feed_ids') // comma-separated feed IDs
+    const sort = searchParams.get('sort') || 'score' // score | newest | oldest | random
 
     // Get IDs of already-swiped items
     const { data: swiped } = await supabase
@@ -32,22 +34,50 @@ export async function GET(request: NextRequest) {
 
     const swipedIds = (swiped || []).map(s => s.item_id)
 
-    // Fetch scored items not yet swiped
+    // Fetch items not yet swiped
     let query = supabase
       .from('content_items')
-      .select('id, title, url, content, published_at, seo_score, viral_score, combined_score, score_reasoning, extracted_keywords, feed_id, status, created_at')
+      .select('id, title, url, content, image_url, published_at, seo_score, viral_score, combined_score, score_reasoning, extracted_keywords, feed_id, status, created_at')
       .eq('user_id', user.id)
-      .in('status', ['scored', 'extracted', 'clustered'])
-      .not('combined_score', 'is', null)
-      .order('combined_score', { ascending: false })
-      .limit(limit)
+      .in('status', ['ingested', 'scored', 'extracted', 'clustered'])
+
+    // Filter by specific feeds
+    if (feedIds) {
+      const ids = feedIds.split(',').filter(Boolean)
+      if (ids.length > 0) {
+        query = query.in('feed_id', ids)
+      }
+    }
+
+    // Sort order
+    if (sort === 'newest') {
+      query = query.order('published_at', { ascending: false, nullsFirst: false })
+    } else if (sort === 'oldest') {
+      query = query.order('published_at', { ascending: true, nullsFirst: false })
+    } else {
+      // Default: by score desc, then by date
+      query = query.order('combined_score', { ascending: false, nullsFirst: false })
+      query = query.order('created_at', { ascending: false })
+    }
+
+    // For random, fetch more items and shuffle client-side
+    const fetchLimit = sort === 'random' ? Math.min(limit * 3, 100) : limit
+    query = query.limit(fetchLimit)
 
     if (swipedIds.length > 0) {
-      // Filter out already swiped — use NOT IN via filter
       query = query.not('id', 'in', `(${swipedIds.join(',')})`)
     }
 
-    const { data: items, error } = await query
+    let { data: items, error } = await query
+
+    // Shuffle for random sort
+    if (sort === 'random' && items && items.length > 0) {
+      for (let i = items.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [items[i], items[j]] = [items[j], items[i]]
+      }
+      items = items.slice(0, limit)
+    }
 
     if (error) {
       console.error('Error fetching swipeable items:', error)
@@ -55,13 +85,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Get feed names for each item
-    const feedIds = [...new Set((items || []).map(i => i.feed_id).filter(Boolean))]
+    const uniqueFeedIds = [...new Set((items || []).map(i => i.feed_id).filter(Boolean))]
     let feedMap: Record<string, string> = {}
-    if (feedIds.length > 0) {
+    if (uniqueFeedIds.length > 0) {
       const { data: feeds } = await supabase
         .from('content_feeds')
         .select('id, name')
-        .in('id', feedIds)
+        .in('id', uniqueFeedIds)
       if (feeds) {
         feedMap = Object.fromEntries(feeds.map(f => [f.id, f.name]))
       }

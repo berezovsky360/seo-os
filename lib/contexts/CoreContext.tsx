@@ -68,6 +68,7 @@ const MODULE_SIDEBAR_MAP: Record<string, { section: string; sectionColor: string
   'content-engine': { section: 'Content', sectionColor: 'bg-yellow-500', label: 'Content Engine', viewState: 'content-engine', order: 3 },
   'telegraph': { section: 'Publishing', sectionColor: 'bg-sky-500', label: 'Telegraph', viewState: 'telegraph', order: 1 },
   'ai-writer': { section: 'Content', sectionColor: 'bg-yellow-500', label: 'AI Writer', viewState: 'ai-writer', order: 5 },
+  'any-chat': { section: 'Communication', sectionColor: 'bg-emerald-500', label: 'Any Chat', viewState: 'any-chat', order: 1 },
 }
 
 export function CoreProvider({ children }: { children: ReactNode }) {

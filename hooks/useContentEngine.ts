@@ -185,6 +185,7 @@ export function useStartPipeline() {
       cluster_id?: string
       site_id?: string
       persona_id?: string
+      scheduled_publish_at?: string
     }) => {
       const res = await fetch('/api/content-engine/pipeline', {
         method: 'POST',

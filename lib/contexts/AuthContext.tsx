@@ -3,13 +3,16 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { User, Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase/client'
+import type { UserProfile, UserRole } from '@/types'
 
 interface AuthContextType {
   user: User | null
   session: Session | null
   loading: boolean
+  userProfile: UserProfile | null
+  userRole: UserRole
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
-  signUp: (email: string, password: string) => Promise<{ error: Error | null }>
+  signUp: (email: string, password: string, metadata?: { first_name?: string }) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
 }
 
@@ -19,6 +22,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
+
+  const userRole: UserRole = userProfile?.role ?? 'user'
 
   useEffect(() => {
     // Get initial session
@@ -39,6 +45,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  // Fetch user profile when user changes
+  useEffect(() => {
+    if (!user) {
+      setUserProfile(null)
+      return
+    }
+    supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single()
+      .then(({ data }) => {
+        setUserProfile(data as UserProfile | null)
+      })
+  }, [user?.id])
 
   // Keep session activity fresh
   useEffect(() => {
@@ -64,10 +86,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error }
   }
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string, metadata?: { first_name?: string }) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
+      options: metadata ? { data: metadata } : undefined,
     })
     return { error }
   }
@@ -82,6 +105,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         session,
         loading,
+        userProfile,
+        userRole,
         signIn,
         signUp,
         signOut,

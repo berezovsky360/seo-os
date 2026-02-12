@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { decrypt, getEncryptionKey } from '@/lib/utils/encryption'
+import { calculateCost, DEFAULT_MODEL } from '@/lib/modules/ai-writer/pricing'
 
 const ACTION_PROMPTS: Record<string, string> = {
   improve:
@@ -25,10 +26,11 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await request.json()
-    const { text, action, tone } = body as {
+    const { text, action, tone, model: requestModel } = body as {
       text: string
       action: string
       tone?: string
+      model?: string
     }
 
     if (!text || !action) {
@@ -62,6 +64,16 @@ export async function POST(request: NextRequest) {
     const encryptionKey = getEncryptionKey()
     const decryptedKey = await decrypt(keyRow.encrypted_value, encryptionKey)
 
+    // Fetch user's model preference
+    const { data: moduleConfig } = await serviceClient
+      .from('modules_config')
+      .select('settings')
+      .eq('user_id', user.id)
+      .eq('module_id', 'ai-writer')
+      .single()
+
+    const model = requestModel || moduleConfig?.settings?.model || DEFAULT_MODEL
+
     const { GoogleGenAI } = await import('@google/genai')
     const ai = new GoogleGenAI({ apiKey: decryptedKey })
 
@@ -71,13 +83,41 @@ Text:
 ${text}`
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model,
       contents: prompt,
     })
 
     const result = response.text?.trim() || text
 
-    return NextResponse.json({ result })
+    // Log usage
+    const usage = response.usageMetadata
+    let estimated_cost = 0
+    if (usage) {
+      const promptTokens = usage.promptTokenCount || 0
+      const outputTokens = usage.candidatesTokenCount || 0
+      estimated_cost = calculateCost(model, promptTokens, outputTokens)
+      await serviceClient.from('ai_usage_log').insert({
+        user_id: user.id,
+        action: `rewrite_${action}`,
+        model,
+        prompt_tokens: promptTokens,
+        output_tokens: outputTokens,
+        total_tokens: usage.totalTokenCount || 0,
+        estimated_cost,
+        metadata: { action, tone },
+      })
+    }
+
+    return NextResponse.json({
+      result,
+      usage: usage ? {
+        model,
+        prompt_tokens: usage.promptTokenCount || 0,
+        output_tokens: usage.candidatesTokenCount || 0,
+        total_tokens: usage.totalTokenCount || 0,
+      } : null,
+      estimated_cost,
+    })
   } catch (error) {
     console.error('[API] ai-writer/rewrite error:', error)
     return NextResponse.json(

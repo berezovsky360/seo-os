@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { createBackgroundTask, startTask, updateTaskProgress, completeTask, failTask } from '@/lib/utils/background-tasks'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await request.json()
-    const { preset, source_item_ids, cluster_id, site_id, persona_id } = body
+    const { preset, source_item_ids, cluster_id, site_id, persona_id, scheduled_publish_at } = body
 
     if (!preset) {
       return NextResponse.json({ error: 'preset required' }, { status: 400 })
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest) {
         source_item_ids: source_item_ids || [],
         cluster_id: cluster_id || null,
         status: 'generating',
+        scheduled_publish_at: scheduled_publish_at || null,
       })
       .select()
       .single()
@@ -93,28 +95,47 @@ export async function POST(request: NextRequest) {
       emitEvent: async () => {},
     }
 
-    // Fire-and-forget the generation
-    engine.executeAction('generate_all_sections', {
-      item_ids: source_item_ids || [],
-      preset,
-      persona_id,
-      site_id,
-    }, context).then(async (result) => {
-      // After sections are generated, assemble
-      await engine.executeAction('assemble_article', {
-        run_id: run.id,
-        sections: result.sections,
-        topic: result.topic,
-        keywords: result.keywords,
-      }, context)
-    }).catch(async (err) => {
-      await supabase
-        .from('content_pipeline_runs')
-        .update({ status: 'failed', error: err.message })
-        .eq('id', run.id)
-    })
+    // Create background task for tracking
+    const taskId = await createBackgroundTask(
+      user.id,
+      'content_pipeline',
+      `Content Pipeline: ${preset}`,
+      { run_id: run.id, preset }
+    )
 
-    return NextResponse.json({ run }, { status: 201 })
+    // Fire-and-forget the generation
+    ;(async () => {
+      try {
+        await startTask(taskId)
+
+        const result = await engine.executeAction('generate_all_sections', {
+          item_ids: source_item_ids || [],
+          preset,
+          persona_id,
+          site_id,
+        }, context)
+
+        await updateTaskProgress(taskId, 60)
+
+        // After sections are generated, assemble
+        await engine.executeAction('assemble_article', {
+          run_id: run.id,
+          sections: result.sections,
+          topic: result.topic,
+          keywords: result.keywords,
+        }, context)
+
+        await completeTask(taskId, { run_id: run.id })
+      } catch (err) {
+        await supabase
+          .from('content_pipeline_runs')
+          .update({ status: 'failed', error: err instanceof Error ? err.message : String(err) })
+          .eq('id', run.id)
+        await failTask(taskId, err instanceof Error ? err.message : 'Pipeline failed')
+      }
+    })()
+
+    return NextResponse.json({ run, task_id: taskId }, { status: 201 })
   } catch (error) {
     console.error('[API] POST /content-engine/pipeline error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

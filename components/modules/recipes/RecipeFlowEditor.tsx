@@ -156,12 +156,12 @@ function FlowEditorInner({ recipe, onSave, onClose, isSaving }: RecipeFlowEditor
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-gray-50">
+    <div className="fixed inset-0 z-50 flex flex-col bg-gray-50 dark:bg-[#0f0f0f]">
       {/* Top Toolbar */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200 z-20 shadow-sm">
+      <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-[#1a1a1a] border-b border-gray-200 dark:border-gray-800 z-20 shadow-sm">
         <div className="flex items-center gap-4">
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-            <X size={18} className="text-gray-500" />
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
+            <X size={18} className="text-gray-500 dark:text-gray-400" />
           </button>
           <div className="flex flex-col">
             <input
@@ -169,14 +169,14 @@ function FlowEditorInner({ recipe, onSave, onClose, isSaving }: RecipeFlowEditor
               value={recipeName}
               onChange={(e) => setRecipeName(e.target.value)}
               placeholder="Recipe name..."
-              className="bg-transparent border-none text-lg font-bold text-gray-900 outline-none placeholder-gray-400 w-72"
+              className="bg-transparent border-none text-lg font-bold text-gray-900 dark:text-gray-100 outline-none placeholder-gray-400 w-72"
             />
             <input
               type="text"
               value={recipeDescription}
               onChange={(e) => setRecipeDescription(e.target.value)}
               placeholder="Add a description..."
-              className="bg-transparent border-none text-xs text-gray-500 outline-none placeholder-gray-400 w-72 mt-0.5"
+              className="bg-transparent border-none text-xs text-gray-500 dark:text-gray-400 outline-none placeholder-gray-400 w-72 mt-0.5"
             />
           </div>
         </div>
@@ -225,7 +225,8 @@ function FlowEditorInner({ recipe, onSave, onClose, isSaving }: RecipeFlowEditor
             onDrop={onDrop}
             nodeTypes={nodeTypes}
             fitView
-            className="bg-gray-50"
+            fitViewOptions={{ maxZoom: 0.75, padding: 0.3 }}
+            className="bg-gray-50 dark:bg-[#0f0f0f]"
             connectionLineType={ConnectionLineType.SmoothStep}
             defaultEdgeOptions={{
               animated: true,
@@ -233,10 +234,10 @@ function FlowEditorInner({ recipe, onSave, onClose, isSaving }: RecipeFlowEditor
               style: { stroke: '#a78bfa', strokeWidth: 2 },
             }}
           >
-            <Background color="#e5e7eb" gap={20} size={1} />
-            <Controls className="!bg-white !border-gray-200 !shadow-md !rounded-xl [&_button]:!bg-white [&_button]:!border-gray-200 [&_button]:!text-gray-600 [&_button:hover]:!bg-gray-50 [&_button]:!rounded-lg" />
+            <Background color="#e5e7eb" gap={20} size={1} className="dark:!bg-[#0f0f0f]" />
+            <Controls className="!bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-gray-700 !shadow-md !rounded-xl [&_button]:!bg-white dark:[&_button]:!bg-[#1a1a1a] [&_button]:!border-gray-200 dark:[&_button]:!border-gray-700 [&_button]:!text-gray-600 dark:[&_button]:!text-gray-400 [&_button:hover]:!bg-gray-50 dark:[&_button:hover]:!bg-gray-800 [&_button]:!rounded-lg" />
             <MiniMap
-              className="!bg-white !border-gray-200 !rounded-xl !shadow-md"
+              className="!bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-gray-700 !rounded-xl !shadow-md"
               maskColor="rgba(0, 0, 0, 0.08)"
               nodeColor={(node) => {
                 switch (node.type) {

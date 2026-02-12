@@ -123,6 +123,151 @@ export interface DomainIntersectionItem {
   first_domain_url: string | null
 }
 
+// ====== On-Page API Types ======
+
+export interface OnPageTaskConfig {
+  target: string
+  max_crawl_pages?: number
+  load_resources?: boolean
+  enable_javascript?: boolean
+  enable_browser_rendering?: boolean
+  enable_content_parsing?: boolean
+  calculate_keyword_density?: boolean
+  store_raw_html?: boolean
+  custom_user_agent?: string
+}
+
+export interface OnPageSummary {
+  crawl_progress: string
+  crawl_status: {
+    max_crawl_pages: number
+    pages_in_queue: number
+    pages_crawled: number
+  }
+  crawl_gateway_address: string
+  page_metrics: Record<string, any>
+  domain_info: {
+    name: string
+    cms: string | null
+    ip: string
+    server: string
+    crawl_start: string
+    crawl_end: string | null
+  }
+}
+
+export interface OnPagePageItem {
+  url: string
+  status_code: number
+  resource_type: string
+  media_type: string
+  size: number
+  encoded_size: number
+  total_transfer_size: number
+  fetch_time: number
+  meta: {
+    title: string | null
+    description: string | null
+    charset: string | null
+    canonical: string | null
+    htags: Record<string, string[]>
+    content: {
+      plain_text_size: number
+      plain_text_rate: number
+      plain_text_word_count: number
+    } | null
+  }
+  page_timing: {
+    time_to_interactive: number | null
+    dom_complete: number | null
+    largest_contentful_paint: number | null
+    cumulative_layout_shift: number | null
+  } | null
+  onpage_score: number
+  checks: Record<string, boolean>
+  content_encoding: string | null
+  internal_links_count: number
+  external_links_count: number
+  broken_links: number
+  images_count: number
+  images_without_alt: number
+  images_size: number
+  is_indexable: boolean
+  no_index: boolean
+  no_follow: boolean
+  last_modified: string | null
+}
+
+export interface OnPageDuplicateItem {
+  accumulator: string
+  pages: { url: string }[]
+  total_count: number
+}
+
+export interface OnPageRedirectItem {
+  url: string
+  redirect_url: string
+  status_code: number
+  is_redirect_loop: boolean
+  chain: { url: string; status_code: number }[]
+}
+
+// ====== Cost Estimation Utilities ======
+
+export function estimateOnPageCost(config: {
+  maxPages: number
+  loadResources?: boolean
+  enableJavascript?: boolean
+  enableBrowserRendering?: boolean
+  enableContentParsing?: boolean
+  enableKeywordDensity?: boolean
+}): number {
+  const baseCostPerPage = 0.000125
+  let coefficient = 1
+  if (config.enableBrowserRendering) {
+    coefficient += 33
+  } else {
+    if (config.loadResources) coefficient += 2
+    if (config.enableJavascript) coefficient += 9
+  }
+  if (config.enableContentParsing) coefficient += 1
+  if (config.enableKeywordDensity) coefficient += 1
+  return config.maxPages * baseCostPerPage * coefficient
+}
+
+export function estimateLabsCost(config: {
+  domainOverview?: boolean
+  rankedKeywords?: number
+  topPages?: number
+  domainIntersection?: number
+  competitorsDomain?: boolean
+}): { breakdown: Record<string, number>; total: number } {
+  const BASE = 0.01
+  const PER_ROW = 0.0001
+  const breakdown: Record<string, number> = {}
+
+  if (config.domainOverview) {
+    breakdown['Domain Overview'] = BASE + (5 * PER_ROW)
+  }
+  if (config.rankedKeywords) {
+    breakdown['Ranked Keywords'] = BASE + (config.rankedKeywords * PER_ROW)
+  }
+  if (config.topPages) {
+    breakdown['Top Pages'] = BASE + (config.topPages * PER_ROW)
+  }
+  if (config.domainIntersection) {
+    breakdown['Domain Intersection'] = BASE + (config.domainIntersection * PER_ROW)
+  }
+  if (config.competitorsDomain) {
+    breakdown['Competitors Domain'] = BASE + (20 * PER_ROW)
+  }
+
+  const total = Object.values(breakdown).reduce((s, v) => s + v, 0)
+  return { breakdown, total }
+}
+
+// ====== Errors ======
+
 export class DataForSEOError extends Error {
   constructor(
     message: string,
@@ -496,6 +641,267 @@ export class DataForSEOClient {
     }
 
     return items
+  }
+
+  // ====== On-Page API Methods ======
+
+  /**
+   * Create an On-Page crawl task.
+   */
+  async createOnPageTask(config: OnPageTaskConfig): Promise<string> {
+    const task: Record<string, any> = {
+      target: config.target,
+      max_crawl_pages: config.max_crawl_pages ?? 100,
+    }
+    if (config.load_resources !== undefined) task.load_resources = config.load_resources
+    if (config.enable_javascript !== undefined) task.enable_javascript = config.enable_javascript
+    if (config.enable_browser_rendering !== undefined) task.enable_browser_rendering = config.enable_browser_rendering
+    if (config.enable_content_parsing !== undefined) task.enable_content_parsing = config.enable_content_parsing
+    if (config.calculate_keyword_density !== undefined) task.calculate_keyword_density = config.calculate_keyword_density
+    if (config.store_raw_html !== undefined) task.store_raw_html = config.store_raw_html
+    if (config.custom_user_agent) task.custom_user_agent = config.custom_user_agent
+
+    const data = await this.request<any>('/on_page/task_post', [task])
+    const taskId = data.tasks?.[0]?.id
+    if (!taskId) throw new DataForSEOError('No task ID returned from On-Page API', 200)
+    return taskId
+  }
+
+  /**
+   * Get On-Page crawl summary (progress + aggregate metrics).
+   */
+  async getOnPageSummary(taskId: string): Promise<OnPageSummary> {
+    const data = await this.request<any>(`/on_page/summary/${taskId}`, [], 'GET')
+    const result = data.tasks?.[0]?.result?.[0]
+    if (!result) throw new DataForSEOError('No summary data returned', 200)
+
+    return {
+      crawl_progress: result.crawl_progress || 'in_progress',
+      crawl_status: {
+        max_crawl_pages: result.crawl_status?.max_crawl_pages ?? 0,
+        pages_in_queue: result.crawl_status?.pages_in_queue ?? 0,
+        pages_crawled: result.crawl_status?.pages_crawled ?? 0,
+      },
+      crawl_gateway_address: result.crawl_gateway_address || '',
+      page_metrics: result.page_metrics || {},
+      domain_info: {
+        name: result.domain_info?.name || '',
+        cms: result.domain_info?.cms ?? null,
+        ip: result.domain_info?.ip || '',
+        server: result.domain_info?.server || '',
+        crawl_start: result.domain_info?.crawl_start || '',
+        crawl_end: result.domain_info?.crawl_end ?? null,
+      },
+    }
+  }
+
+  /**
+   * Get per-page SEO data from a completed crawl.
+   */
+  async getOnPagePages(
+    taskId: string,
+    limit: number = 100,
+    offset: number = 0,
+    filters?: any[],
+  ): Promise<{ items: OnPagePageItem[]; total: number }> {
+    const body: Record<string, any> = { id: taskId, limit, offset }
+    if (filters && filters.length > 0) body.filters = filters
+
+    const data = await this.request<any>('/on_page/pages', [body])
+    const result = data.tasks?.[0]?.result?.[0]
+
+    const items: OnPagePageItem[] = []
+    if (result?.items) {
+      for (const item of result.items) {
+        const meta = item.meta || {}
+        const htags = meta.htags || {}
+        const content = meta.content || {}
+        const timing = item.page_timing || {}
+
+        items.push({
+          url: item.url || '',
+          status_code: item.status_code ?? 0,
+          resource_type: item.resource_type || '',
+          media_type: item.media_type || '',
+          size: item.size ?? 0,
+          encoded_size: item.encoded_size ?? 0,
+          total_transfer_size: item.total_transfer_size ?? 0,
+          fetch_time: item.fetch_timing?.duration ?? 0,
+          meta: {
+            title: meta.title ?? null,
+            description: meta.description ?? null,
+            charset: meta.charset ?? null,
+            canonical: meta.canonical ?? null,
+            htags,
+            content: content.plain_text_word_count != null ? {
+              plain_text_size: content.plain_text_size ?? 0,
+              plain_text_rate: content.plain_text_rate ?? 0,
+              plain_text_word_count: content.plain_text_word_count ?? 0,
+            } : null,
+          },
+          page_timing: timing.time_to_interactive != null ? {
+            time_to_interactive: timing.time_to_interactive ?? null,
+            dom_complete: timing.dom_complete ?? null,
+            largest_contentful_paint: timing.largest_contentful_paint ?? null,
+            cumulative_layout_shift: timing.cumulative_layout_shift ?? null,
+          } : null,
+          onpage_score: item.onpage_score ?? 0,
+          checks: item.checks || {},
+          content_encoding: item.content_encoding ?? null,
+          internal_links_count: item.internal_links_count ?? 0,
+          external_links_count: item.external_links_count ?? 0,
+          broken_links: item.broken_links ?? 0,
+          images_count: item.images_count ?? 0,
+          images_without_alt: item.images_without_alt ?? 0,
+          images_size: item.images_size ?? 0,
+          is_indexable: item.is_indexable ?? true,
+          no_index: item.meta?.robots?.is_no_index ?? false,
+          no_follow: item.meta?.robots?.is_no_follow ?? false,
+          last_modified: item.last_modified ?? null,
+        })
+      }
+    }
+
+    return { items, total: result?.total_items_count ?? items.length }
+  }
+
+  /**
+   * Get duplicate title or description tags from a crawl.
+   */
+  async getOnPageDuplicateTags(
+    taskId: string,
+    type: 'title' | 'description' = 'title',
+  ): Promise<OnPageDuplicateItem[]> {
+    const data = await this.request<any>('/on_page/duplicate_tags', [{
+      id: taskId,
+      type,
+      limit: 100,
+    }])
+
+    const items: OnPageDuplicateItem[] = []
+    const result = data.tasks?.[0]?.result?.[0]
+    if (result?.items) {
+      for (const item of result.items) {
+        items.push({
+          accumulator: item.accumulator || '',
+          pages: (item.pages || []).map((p: any) => ({ url: p.url || '' })),
+          total_count: item.total_count ?? 0,
+        })
+      }
+    }
+    return items
+  }
+
+  /**
+   * Get duplicate content pages from a crawl.
+   */
+  async getOnPageDuplicateContent(taskId: string): Promise<OnPageDuplicateItem[]> {
+    const data = await this.request<any>('/on_page/duplicate_content', [{
+      id: taskId,
+      limit: 100,
+    }])
+
+    const items: OnPageDuplicateItem[] = []
+    const result = data.tasks?.[0]?.result?.[0]
+    if (result?.items) {
+      for (const item of result.items) {
+        items.push({
+          accumulator: item.accumulator || '',
+          pages: (item.pages || []).map((p: any) => ({ url: p.url || '' })),
+          total_count: item.total_count ?? 0,
+        })
+      }
+    }
+    return items
+  }
+
+  /**
+   * Get redirect chains detected during a crawl.
+   */
+  async getOnPageRedirectChains(taskId: string): Promise<OnPageRedirectItem[]> {
+    const data = await this.request<any>('/on_page/redirect_chains', [{
+      id: taskId,
+      limit: 100,
+    }])
+
+    const items: OnPageRedirectItem[] = []
+    const result = data.tasks?.[0]?.result?.[0]
+    if (result?.items) {
+      for (const item of result.items) {
+        items.push({
+          url: item.url || '',
+          redirect_url: item.redirect_url || '',
+          status_code: item.status_code ?? 301,
+          is_redirect_loop: item.is_redirect_loop ?? false,
+          chain: (item.chain || []).map((c: any) => ({
+            url: c.url || '',
+            status_code: c.status_code ?? 0,
+          })),
+        })
+      }
+    }
+    return items
+  }
+
+  /**
+   * Instant single-page SEO audit (no full crawl needed).
+   */
+  async getInstantPages(url: string): Promise<OnPagePageItem> {
+    const data = await this.request<any>('/on_page/instant_pages', [{
+      url,
+      enable_javascript: false,
+      load_resources: false,
+    }])
+
+    const result = data.tasks?.[0]?.result?.[0]?.items?.[0]
+    if (!result) throw new DataForSEOError('No instant page data returned', 200)
+
+    const meta = result.meta || {}
+    const htags = meta.htags || {}
+    const content = meta.content || {}
+    const timing = result.page_timing || {}
+
+    return {
+      url: result.url || url,
+      status_code: result.status_code ?? 0,
+      resource_type: result.resource_type || 'html',
+      media_type: result.media_type || '',
+      size: result.size ?? 0,
+      encoded_size: result.encoded_size ?? 0,
+      total_transfer_size: result.total_transfer_size ?? 0,
+      fetch_time: result.fetch_timing?.duration ?? 0,
+      meta: {
+        title: meta.title ?? null,
+        description: meta.description ?? null,
+        charset: meta.charset ?? null,
+        canonical: meta.canonical ?? null,
+        htags,
+        content: content.plain_text_word_count != null ? {
+          plain_text_size: content.plain_text_size ?? 0,
+          plain_text_rate: content.plain_text_rate ?? 0,
+          plain_text_word_count: content.plain_text_word_count ?? 0,
+        } : null,
+      },
+      page_timing: {
+        time_to_interactive: timing.time_to_interactive ?? null,
+        dom_complete: timing.dom_complete ?? null,
+        largest_contentful_paint: timing.largest_contentful_paint ?? null,
+        cumulative_layout_shift: timing.cumulative_layout_shift ?? null,
+      },
+      onpage_score: result.onpage_score ?? 0,
+      checks: result.checks || {},
+      content_encoding: result.content_encoding ?? null,
+      internal_links_count: result.internal_links_count ?? 0,
+      external_links_count: result.external_links_count ?? 0,
+      broken_links: result.broken_links ?? 0,
+      images_count: result.images_count ?? 0,
+      images_without_alt: result.images_without_alt ?? 0,
+      images_size: result.images_size ?? 0,
+      is_indexable: result.is_indexable ?? true,
+      no_index: result.meta?.robots?.is_no_index ?? false,
+      no_follow: result.meta?.robots?.is_no_follow ?? false,
+      last_modified: result.last_modified ?? null,
+    }
   }
 
   /**

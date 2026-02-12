@@ -32,12 +32,27 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Redirect to login if not authenticated (optional - uncomment when auth is ready)
-  // const protectedPaths = ['/dashboard', '/sites', '/content', '/keywords']
-  // const isProtectedPath = protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))
-  // if (isProtectedPath && !user) {
-  //   return NextResponse.redirect(new URL('/login', request.url))
-  // }
+  const { pathname } = request.nextUrl
+
+  // Public paths that don't require authentication
+  const publicPaths = ['/login', '/register']
+  const isPublicPath = publicPaths.some(path => pathname.startsWith(path))
+  const isAuthApi = pathname.startsWith('/api/auth/')
+  const isCronApi = pathname.startsWith('/api/cron/')
+
+  // Redirect unauthenticated users to login
+  if (!user && !isPublicPath && !isAuthApi && !isCronApi) {
+    const loginUrl = new URL('/login', request.url)
+    if (pathname !== '/') {
+      loginUrl.searchParams.set('redirect', pathname)
+    }
+    return NextResponse.redirect(loginUrl)
+  }
+
+  // Redirect authenticated users away from auth pages
+  if (user && isPublicPath) {
+    return NextResponse.redirect(new URL('/', request.url))
+  }
 
   return supabaseResponse
 }

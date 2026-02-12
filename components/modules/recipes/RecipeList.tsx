@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import {
   BookOpen, Plus, ChevronLeft, Zap, ArrowRight, Trash2,
   ToggleLeft, ToggleRight, Loader2, Clock, Hash,
-  Store, Share2, FileJson
+  Store, Share2, FileJson, Settings
 } from 'lucide-react';
 import { useRecipes, useCreateRecipe, useUpdateRecipe, useDeleteRecipe } from '@/hooks/useRecipes';
 import { useToast } from '@/lib/contexts/ToastContext';
@@ -13,6 +13,7 @@ import RecipeFlowEditor from './RecipeFlowEditor';
 import RecipeMarketplace from './RecipeMarketplace';
 import ShareRecipeModal from './ShareRecipeModal';
 import ImportRecipeModal from './ImportRecipeModal';
+import { ALL_MODULES, MODULE_STYLES, RECIPE_MODULES_STORAGE_KEY } from './nodes/ActionNode';
 import type { Recipe } from '@/lib/core/events';
 
 interface RecipeListProps {
@@ -33,6 +34,32 @@ export default function RecipeList({ onBack }: RecipeListProps) {
   const [showMarketplace, setShowMarketplace] = useState(false);
   const [sharingRecipe, setSharingRecipe] = useState<Recipe | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [activeTab, setActiveTab] = useState<'recipes' | 'settings'>('recipes');
+  const [enabledModules, setEnabledModules] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return ALL_MODULES.map(m => m.id);
+    try {
+      const stored = localStorage.getItem(RECIPE_MODULES_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : ALL_MODULES.map(m => m.id);
+    } catch {
+      return ALL_MODULES.map(m => m.id);
+    }
+  });
+
+  const toggleModule = (moduleId: string) => {
+    setEnabledModules(prev => {
+      const next = prev.includes(moduleId)
+        ? prev.filter(id => id !== moduleId)
+        : [...prev, moduleId];
+      localStorage.setItem(RECIPE_MODULES_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const toggleAllModules = () => {
+    const next = enabledModules.length === ALL_MODULES.length ? [] : ALL_MODULES.map(m => m.id);
+    setEnabledModules(next);
+    localStorage.setItem(RECIPE_MODULES_STORAGE_KEY, JSON.stringify(next));
+  };
 
   const handleCreate = async (data: any) => {
     try {
@@ -163,9 +190,21 @@ export default function RecipeList({ onBack }: RecipeListProps) {
             <BookOpen size={20} className="text-gray-900" />
             <h1 className="text-lg font-bold text-gray-900">Recipes</h1>
           </div>
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
-            {recipes.length} recipes
-          </span>
+          <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+            <button
+              onClick={() => setActiveTab('recipes')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeTab === 'recipes' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Recipes ({recipes.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeTab === 'settings' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <Settings size={12} />
+              Modules
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -196,7 +235,56 @@ export default function RecipeList({ onBack }: RecipeListProps) {
       </div>
 
       <div className="p-8">
-        {isLoading ? (
+        {activeTab === 'settings' ? (
+          <div className="max-w-2xl">
+            <div className="mb-6">
+              <h2 className="text-lg font-bold text-gray-900 mb-1">Module Visibility</h2>
+              <p className="text-sm text-gray-500">Choose which modules appear in the Action node dropdown. Disabling unused modules simplifies the editor.</p>
+            </div>
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm text-gray-500">{enabledModules.length} of {ALL_MODULES.length} modules enabled</span>
+              <button
+                onClick={toggleAllModules}
+                className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+              >
+                {enabledModules.length === ALL_MODULES.length ? 'Disable all' : 'Enable all'}
+              </button>
+            </div>
+            <div className="space-y-2">
+              {ALL_MODULES.map(mod => {
+                const isEnabled = enabledModules.includes(mod.id);
+                const style = MODULE_STYLES[mod.id];
+                const IconComponent = style?.icon;
+                return (
+                  <div
+                    key={mod.id}
+                    onClick={() => toggleModule(mod.id)}
+                    className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${
+                      isEnabled
+                        ? 'bg-white border-gray-200 shadow-sm hover:shadow-md'
+                        : 'bg-gray-50 border-gray-100 opacity-60 hover:opacity-80'
+                    }`}
+                  >
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${style?.iconBg || 'bg-gray-100'}`}>
+                      {IconComponent && <IconComponent size={18} className={style?.iconColor || 'text-gray-500'} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900">{mod.label}</p>
+                      <p className="text-xs text-gray-400">{mod.actions.length} actions</p>
+                    </div>
+                    <div className="flex-shrink-0">
+                      {isEnabled ? (
+                        <ToggleRight size={24} className="text-indigo-600" />
+                      ) : (
+                        <ToggleLeft size={24} className="text-gray-300" />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 size={32} className="animate-spin text-gray-300" />
           </div>

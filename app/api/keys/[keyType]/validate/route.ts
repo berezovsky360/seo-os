@@ -66,6 +66,10 @@ export async function POST(
 
         case 'dataforseo': {
           // DataForSEO uses login:password base64 auth
+          if (!decryptedValue.includes(':')) {
+            validationError = 'Invalid format. Expected "login:password" (e.g. "user@email.com:yourApiPassword")'
+            break
+          }
           const res = await fetch('https://api.dataforseo.com/v3/appendix/user_data', {
             headers: {
               'Authorization': `Basic ${Buffer.from(decryptedValue).toString('base64')}`,
@@ -80,7 +84,11 @@ export async function POST(
               currency: data.tasks?.[0]?.result?.[0]?.money?.currency,
             }
           } else {
-            validationError = `HTTP ${res.status}`
+            const errBody = await res.text().catch(() => '')
+            const loginPart = decryptedValue.split(':')[0]
+            validationError = res.status === 401 || res.status === 403
+              ? `Authorization failed for "${loginPart}". Check login & password at https://app.dataforseo.com/api-access`
+              : `HTTP ${res.status}: ${errBody.slice(0, 200)}`
           }
           break
         }

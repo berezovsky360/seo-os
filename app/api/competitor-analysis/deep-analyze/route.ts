@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { CompetitorAnalysisModule } from '@/lib/modules/competitor-analysis'
 import { decrypt, getEncryptionKey } from '@/lib/utils/encryption'
+import { createBackgroundTask, startTask, updateTaskProgress, completeTask, failTask } from '@/lib/utils/background-tasks'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
 
     const { data: competitor } = await supabase
       .from('competitors')
-      .select('user_id')
+      .select('user_id, domain')
       .eq('id', competitor_id)
       .single()
 
@@ -38,18 +39,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'DataForSEO API key not configured' }, { status: 400 })
     }
 
-    const encryptionKey = getEncryptionKey()
-    const dfsCredentials = await decrypt(keyRow.encrypted_value, encryptionKey)
+    // Create background task and return immediately
+    const taskId = await createBackgroundTask(
+      competitor.user_id,
+      'deep_analysis',
+      `Deep Analysis: ${competitor.domain}`,
+      { competitor_id }
+    )
 
-    const module = new CompetitorAnalysisModule()
-    const result = await module.executeAction('deep_analysis', { competitor_id }, {
-      supabase,
-      userId: competitor.user_id,
-      apiKeys: { dataforseo: dfsCredentials },
-      emitEvent: async () => {},
-    })
+    // Fire-and-forget
+    ;(async () => {
+      try {
+        await startTask(taskId)
 
-    return NextResponse.json(result)
+        const encryptionKey = getEncryptionKey()
+        const dfsCredentials = await decrypt(keyRow.encrypted_value, encryptionKey)
+
+        const module = new CompetitorAnalysisModule()
+
+        await updateTaskProgress(taskId, 20)
+
+        const result = await module.executeAction('deep_analysis', { competitor_id }, {
+          supabase,
+          userId: competitor.user_id,
+          apiKeys: { dataforseo: dfsCredentials },
+          emitEvent: async () => {},
+        })
+
+        await completeTask(taskId, result)
+      } catch (err) {
+        await failTask(taskId, err instanceof Error ? err.message : 'Deep analysis failed')
+      }
+    })()
+
+    return NextResponse.json({ task_id: taskId, status: 'queued' }, { status: 202 })
   } catch (error) {
     console.error('Deep analysis error:', error)
     return NextResponse.json(

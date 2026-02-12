@@ -27,6 +27,8 @@ import { CronModule } from '@/lib/modules/cron'
 import { ContentEngineModule } from '@/lib/modules/content-engine'
 import { TelegraphModule } from '@/lib/modules/telegraph'
 import { CompetitorAnalysisModule } from '@/lib/modules/competitor-analysis'
+import { CompetitorAnatomyModule } from '@/lib/modules/competitor-anatomy'
+import { AnyChatModule } from '@/lib/modules/any-chat'
 
 export const MODULE_REGISTRY: Record<string, SEOModule> = {
   'rankmath-bridge': new RankMathBridgeModule(),
@@ -46,6 +48,8 @@ export const MODULE_REGISTRY: Record<string, SEOModule> = {
   'content-engine': new ContentEngineModule(),
   'telegraph': new TelegraphModule(),
   'competitor-analysis': new CompetitorAnalysisModule(),
+  'competitor-anatomy': new CompetitorAnatomyModule(),
+  'any-chat': new AnyChatModule(),
 }
 
 /**

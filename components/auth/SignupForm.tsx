@@ -1,18 +1,18 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/contexts/AuthContext'
-import { UserPlus } from 'lucide-react'
+import { UserPlus, CheckCircle } from 'lucide-react'
 
 export default function SignupForm() {
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [success, setSuccess] = useState(false)
   const { signUp } = useAuth()
-  const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,16 +30,43 @@ export default function SignupForm() {
 
     setLoading(true)
 
-    const { error } = await signUp(email, password)
+    const metadata = name.trim() ? { first_name: name.trim() } : undefined
+    const { error } = await signUp(email, password, metadata)
 
     if (error) {
       setError(error.message)
       setLoading(false)
     } else {
-      // Show success message
-      alert('Account created! Please check your email to verify your account.')
-      router.push('/login')
+      setSuccess(true)
+      setLoading(false)
     }
+  }
+
+  if (success) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 via-white to-indigo-50">
+        <div className="w-full max-w-md">
+          <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100 text-center">
+            <div className="flex items-center justify-center mb-6">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                <CheckCircle className="text-green-600" size={32} />
+              </div>
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Check Your Email</h1>
+            <p className="text-gray-500 mb-6">
+              We sent a verification link to <span className="font-medium text-gray-900">{email}</span>.
+              Click the link to activate your account.
+            </p>
+            <a
+              href="/login?registered=true"
+              className="inline-block w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-semibold py-3 rounded-lg hover:from-indigo-600 hover:to-purple-700 transition-all text-center"
+            >
+              Go to Sign In
+            </a>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -59,7 +86,21 @@ export default function SignupForm() {
             Start managing your WordPress sites with AI
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+                Name <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                id="name"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                placeholder="Your name"
+              />
+            </div>
+
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
                 Email
@@ -86,7 +127,7 @@ export default function SignupForm() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                placeholder="••••••••"
+                placeholder="Minimum 6 characters"
               />
             </div>
 
@@ -101,7 +142,7 @@ export default function SignupForm() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                placeholder="••••••••"
+                placeholder="Repeat your password"
               />
             </div>
 

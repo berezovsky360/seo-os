@@ -16,6 +16,8 @@ import {
   Play,
   Eye,
   Loader2,
+  AlertCircle,
+  Clock,
 } from 'lucide-react'
 import {
   useContentFeeds,
@@ -28,6 +30,7 @@ import {
   usePipelineRuns,
   useStartPipeline,
 } from '@/hooks/useContentEngine'
+import { useToast } from '@/lib/contexts/ToastContext'
 
 type Tab = 'feeds' | 'items' | 'pipeline'
 
@@ -97,35 +100,71 @@ export default function ContentEngineDashboard({ onBack }: Props) {
 // ====== Feeds Tab ======
 
 function FeedsTab() {
-  const { data: feeds, isLoading } = useContentFeeds()
+  const { data: feeds, isLoading, error: feedsError } = useContentFeeds()
   const createFeed = useCreateFeed()
   const deleteFeed = useDeleteFeed()
   const pollFeed = usePollFeed()
+  const toast = useToast()
 
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
   const [feedUrl, setFeedUrl] = useState('')
+  const [pollInterval, setPollInterval] = useState(60)
   const [pollingId, setPollingId] = useState<string | null>(null)
+  const [selectedFeedId, setSelectedFeedId] = useState<string | null>(null)
 
   const handleCreate = async () => {
     if (!name.trim() || !feedUrl.trim()) return
-    await createFeed.mutateAsync({ name, feed_url: feedUrl })
-    setName('')
-    setFeedUrl('')
-    setShowForm(false)
+    try {
+      const result = await createFeed.mutateAsync({
+        name,
+        feed_url: feedUrl,
+        poll_interval_minutes: pollInterval,
+      })
+      toast.success('Feed created — click "Poll" to fetch items')
+      setName('')
+      setFeedUrl('')
+      setPollInterval(60)
+      setShowForm(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create feed')
+    }
   }
 
   const handlePoll = async (feedId: string) => {
     setPollingId(feedId)
     try {
-      await pollFeed.mutateAsync(feedId)
+      const result = await pollFeed.mutateAsync(feedId)
+      toast.success(`Polled ${result.total_items} items (${result.new_items} new)`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to poll feed')
     } finally {
       setPollingId(null)
     }
   }
 
+  // If a feed is selected, show its items
+  if (selectedFeedId) {
+    const selectedFeed = feeds?.find(f => f.id === selectedFeedId)
+    return <FeedDetailView feed={selectedFeed} onBack={() => setSelectedFeedId(null)} onPoll={handlePoll} pollingId={pollingId} />
+  }
+
   if (isLoading) {
     return <div className="flex items-center justify-center py-20 text-gray-400"><Loader2 size={24} className="animate-spin" /></div>
+  }
+
+  if (feedsError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <AlertCircle size={40} className="text-red-300 mb-3" />
+        <p className="text-sm font-medium text-red-600 mb-1">Failed to load feeds</p>
+        <p className="text-xs text-gray-500 max-w-md">
+          {feedsError.message.includes('42P01') || feedsError.message.includes('relation')
+            ? 'The content_feeds table does not exist. Run the migration: supabase/migrations/20260214000000_content_engine.sql'
+            : feedsError.message}
+        </p>
+      </div>
+    )
   }
 
   return (
@@ -143,7 +182,7 @@ function FeedsTab() {
 
       {showForm && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -153,9 +192,26 @@ function FeedsTab() {
             <input
               value={feedUrl}
               onChange={(e) => setFeedUrl(e.target.value)}
-              placeholder="Feed URL (e.g. https://example.com/feed)"
+              placeholder="RSS Feed URL"
               className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-medium text-gray-500">Poll interval:</label>
+            <select
+              value={pollInterval}
+              onChange={(e) => setPollInterval(Number(e.target.value))}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value={15}>Every 15 min</option>
+              <option value={30}>Every 30 min</option>
+              <option value={60}>Every hour</option>
+              <option value={180}>Every 3 hours</option>
+              <option value={360}>Every 6 hours</option>
+              <option value={720}>Every 12 hours</option>
+              <option value={1440}>Once a day</option>
+            </select>
+            <span className="text-[11px] text-gray-400">Used when Cron is enabled</span>
           </div>
           <div className="flex gap-2">
             <button
@@ -187,19 +243,29 @@ function FeedsTab() {
                 <th className="text-left px-4 py-3 font-medium text-gray-500">URL</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Last Polled</th>
                 <th className="text-center px-4 py-3 font-medium text-gray-500">Items</th>
+                <th className="text-center px-4 py-3 font-medium text-gray-500">Interval</th>
                 <th className="text-center px-4 py-3 font-medium text-gray-500">Status</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
             <tbody>
               {feeds?.map((feed) => (
-                <tr key={feed.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <tr
+                  key={feed.id}
+                  className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
+                  onClick={() => setSelectedFeedId(feed.id)}
+                >
                   <td className="px-4 py-3 font-medium text-gray-900">{feed.name}</td>
                   <td className="px-4 py-3 text-gray-500 max-w-[200px] truncate">{feed.feed_url}</td>
                   <td className="px-4 py-3 text-gray-500">
                     {feed.last_polled_at ? new Date(feed.last_polled_at).toLocaleString() : 'Never'}
                   </td>
-                  <td className="px-4 py-3 text-center text-gray-600">{feed.last_item_count}</td>
+                  <td className="px-4 py-3 text-center text-gray-600">{feed.last_item_count || 0}</td>
+                  <td className="px-4 py-3 text-center text-xs text-gray-500">
+                    {feed.poll_interval_minutes >= 1440 ? `${Math.round(feed.poll_interval_minutes / 1440)}d`
+                      : feed.poll_interval_minutes >= 60 ? `${Math.round(feed.poll_interval_minutes / 60)}h`
+                      : `${feed.poll_interval_minutes}m`}
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
                       feed.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
@@ -207,7 +273,7 @@ function FeedsTab() {
                       {feed.enabled ? 'Active' : 'Paused'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => handlePoll(feed.id)}
@@ -225,6 +291,133 @@ function FeedsTab() {
                         <Trash2 size={14} />
                       </button>
                     </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ====== Feed Detail View ======
+
+function FeedDetailView({ feed, onBack, onPoll, pollingId }: {
+  feed: any
+  onBack: () => void
+  onPoll: (feedId: string) => void
+  pollingId: string | null
+}) {
+  const { data, isLoading } = useContentItems({ feedId: feed?.id, perPage: 50 })
+  const items = data?.items || []
+  const total = data?.total || 0
+
+  if (!feed) return <p className="text-sm text-gray-400 py-8 text-center">Feed not found</p>
+
+  return (
+    <div className="space-y-4">
+      {/* Back + Feed header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors"
+          >
+            <ChevronLeft size={14} />
+            All Feeds
+          </button>
+          <div className="h-4 w-px bg-gray-200" />
+          <h2 className="text-lg font-semibold text-gray-900">{feed.name}</h2>
+          <span className="text-xs text-gray-400">({total} items)</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onPoll(feed.id)}
+            disabled={pollingId === feed.id}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-medium hover:bg-indigo-100 disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={pollingId === feed.id ? 'animate-spin' : ''} />
+            Poll Now
+          </button>
+        </div>
+      </div>
+
+      {/* Feed info */}
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center gap-6 text-xs text-gray-500">
+        <span><strong className="text-gray-700">URL:</strong> {feed.feed_url}</span>
+        <span><strong className="text-gray-700">Interval:</strong> {feed.poll_interval_minutes}m</span>
+        <span><strong className="text-gray-700">Last poll:</strong> {feed.last_polled_at ? new Date(feed.last_polled_at).toLocaleString() : 'Never'}</span>
+      </div>
+
+      {/* Items list */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12 text-gray-400"><Loader2 size={24} className="animate-spin" /></div>
+      ) : items.length === 0 ? (
+        <div className="text-center py-12 text-gray-400">
+          <FileText size={40} className="mx-auto mb-2 opacity-50" />
+          <p className="text-sm font-medium">No items ingested yet</p>
+          <p className="text-xs mt-1">Click &ldquo;Poll Now&rdquo; to fetch items from this feed</p>
+        </div>
+      ) : (
+        <div className="border border-gray-200 rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">Title</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">Published</th>
+                <th className="text-center px-4 py-3 font-medium text-gray-500">Score</th>
+                <th className="text-center px-4 py-3 font-medium text-gray-500">Status</th>
+                <th className="w-8 px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3 max-w-[400px]">
+                      {item.image_url && (
+                        <div className="w-10 h-10 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
+                          <img src={item.image_url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = 'none' }} />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{item.title}</p>
+                        {item.url && (
+                          <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:underline truncate block">
+                            {item.url}
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                    {item.published_at ? new Date(item.published_at).toLocaleDateString() : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {item.combined_score != null ? (
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${
+                        item.combined_score >= 70 ? 'bg-green-100 text-green-700'
+                        : item.combined_score >= 40 ? 'bg-yellow-100 text-yellow-700'
+                        : 'bg-red-100 text-red-700'
+                      }`}>{Math.round(item.combined_score)}</span>
+                    ) : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                      item.status === 'ingested' ? 'bg-gray-100 text-gray-600'
+                      : item.status === 'scored' ? 'bg-blue-100 text-blue-600'
+                      : item.status === 'extracted' ? 'bg-purple-100 text-purple-600'
+                      : 'bg-gray-100 text-gray-500'
+                    }`}>{item.status}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {item.url && (
+                      <a href={item.url} target="_blank" rel="noopener noreferrer" className="p-1 text-gray-400 hover:text-gray-600">
+                        <ExternalLink size={12} />
+                      </a>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -388,7 +581,16 @@ function ItemsTab() {
                           className="rounded"
                         />
                       </td>
-                      <td className="px-4 py-3 font-medium text-gray-900 max-w-[300px] truncate">{item.title}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3 max-w-[300px]">
+                          {item.image_url && (
+                            <div className="w-10 h-10 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
+                              <img src={item.image_url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = 'none' }} />
+                            </div>
+                          )}
+                          <span className="font-medium text-gray-900 truncate">{item.title}</span>
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-gray-500 text-xs">{(item as any).content_feeds?.name || '—'}</td>
                       <td className="px-4 py-3 text-center">{scoreBadge(item.seo_score)}</td>
                       <td className="px-4 py-3 text-center">{scoreBadge(item.viral_score)}</td>
@@ -448,6 +650,11 @@ function ItemDetail({ item }: { item: any }) {
 
   return (
     <div className="space-y-3">
+      {item.image_url && (
+        <div className="w-full max-w-md h-40 rounded-lg overflow-hidden bg-gray-100">
+          <img src={item.image_url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = 'none' }} />
+        </div>
+      )}
       {item.score_reasoning && (
         <div>
           <span className="text-xs font-semibold text-gray-500 uppercase">Score Reasoning</span>
@@ -518,13 +725,24 @@ function ItemDetail({ item }: { item: any }) {
 function PipelineTab() {
   const { data: runs, isLoading } = usePipelineRuns()
   const startPipeline = useStartPipeline()
+  const toast = useToast()
   const [showNew, setShowNew] = useState(false)
   const [preset, setPreset] = useState<string>('full-article')
+  const [scheduledAt, setScheduledAt] = useState<string>('')
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null)
 
   const handleStart = async () => {
-    await startPipeline.mutateAsync({ preset })
-    setShowNew(false)
+    try {
+      await startPipeline.mutateAsync({
+        preset,
+        scheduled_publish_at: scheduledAt || undefined,
+      })
+      toast.success(scheduledAt ? `Pipeline started — publication scheduled for ${new Date(scheduledAt).toLocaleString()}` : 'Pipeline started')
+      setShowNew(false)
+      setScheduledAt('')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to start pipeline')
+    }
   }
 
   const statusColor = (status: string) => {
@@ -558,16 +776,36 @@ function PipelineTab() {
 
       {showNew && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Preset</label>
-            <select
-              value={preset}
-              onChange={(e) => setPreset(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white w-64"
-            >
-              <option value="full-article">Full Article (2000+ words)</option>
-              <option value="news-post">News Post (500-800 words)</option>
-            </select>
+          <div className="flex items-center gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Preset</label>
+              <select
+                value={preset}
+                onChange={(e) => setPreset(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white w-56"
+              >
+                <option value="full-article">Full Article (2000+ words)</option>
+                <option value="news-post">News Post (500-800 words)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Schedule publication (optional)</label>
+              <input
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(e) => setScheduledAt(e.target.value)}
+                min={new Date().toISOString().slice(0, 16)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white w-56 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            {scheduledAt && (
+              <button
+                onClick={() => setScheduledAt('')}
+                className="mt-4 text-xs text-gray-400 hover:text-gray-600"
+              >
+                Clear
+              </button>
+            )}
           </div>
           <div className="flex gap-2">
             <button
@@ -575,9 +813,9 @@ function PipelineTab() {
               disabled={startPipeline.isPending}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
             >
-              {startPipeline.isPending ? 'Starting...' : 'Start Pipeline'}
+              {startPipeline.isPending ? 'Starting...' : scheduledAt ? 'Schedule & Generate' : 'Start Pipeline'}
             </button>
-            <button onClick={() => setShowNew(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm">
+            <button onClick={() => { setShowNew(false); setScheduledAt('') }} className="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm">
               Cancel
             </button>
           </div>
@@ -600,6 +838,7 @@ function PipelineTab() {
                 <th className="text-center px-4 py-3 font-medium text-gray-500">Status</th>
                 <th className="text-center px-4 py-3 font-medium text-gray-500">Words</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Started</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">Scheduled</th>
                 <th className="w-8 px-4 py-3"></th>
               </tr>
             </thead>
@@ -629,13 +868,21 @@ function PipelineTab() {
                     </td>
                     <td className="px-4 py-3 text-center text-gray-600">{run.word_count || '—'}</td>
                     <td className="px-4 py-3 text-gray-500">{new Date(run.started_at).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-gray-500">
+                      {run.scheduled_publish_at ? (
+                        <span className="inline-flex items-center gap-1 text-amber-600">
+                          <Clock size={12} />
+                          {new Date(run.scheduled_publish_at).toLocaleString()}
+                        </span>
+                      ) : '—'}
+                    </td>
                     <td className="px-4 py-3">
                       <Eye size={14} className="text-gray-400" />
                     </td>
                   </tr>
                   {expandedRunId === run.id && (
                     <tr key={`${run.id}-detail`}>
-                      <td colSpan={6} className="px-4 py-4 bg-gray-50 border-b border-gray-200">
+                      <td colSpan={7} className="px-4 py-4 bg-gray-50 border-b border-gray-200">
                         <RunDetail run={run} />
                       </td>
                     </tr>
@@ -703,6 +950,13 @@ function RunDetail({ run }: { run: any }) {
       {run.wp_post_id && (
         <p className="text-sm text-green-600 font-medium">
           Published to WordPress (Post #{run.wp_post_id})
+        </p>
+      )}
+
+      {run.scheduled_publish_at && (
+        <p className="text-sm text-amber-600 font-medium flex items-center gap-1">
+          <Clock size={14} />
+          Scheduled: {new Date(run.scheduled_publish_at).toLocaleString()}
         </p>
       )}
 

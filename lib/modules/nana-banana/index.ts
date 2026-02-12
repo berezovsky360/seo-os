@@ -77,10 +77,10 @@ export class NanaBananaModule implements SEOModule {
     {
       id: 'analyze_style',
       name: 'Analyze Cover Style',
-      description: 'Analyze a reference image and generate a reusable style description',
+      description: 'Analyze 1-10 reference images and generate a unified style description',
       params: [
         { name: 'site_id', type: 'string', label: 'Site ID', required: true },
-        { name: 'image_base64', type: 'string', label: 'Reference Image (base64)', required: true },
+        { name: 'images', type: 'string', label: 'Reference Images (base64 array)', required: true },
       ],
     },
   ]
@@ -131,12 +131,42 @@ export class NanaBananaModule implements SEOModule {
     const { post_id, site_id } = params
     if (!post_id || !site_id) throw new Error('post_id and site_id are required')
 
-    const { data: post } = await context.supabase
+    // Try posts table first (WP synced), then generated_articles (local)
+    let post: { title: string; content: string; focus_keyword: string | null; seo_description: string | null } | null = null
+
+    const { data: wpPost } = await context.supabase
       .from('posts')
       .select('title, content, focus_keyword, seo_description')
       .eq('id', post_id)
       .eq('site_id', site_id)
-      .single()
+      .maybeSingle()
+
+    if (wpPost) {
+      post = wpPost
+    } else {
+      // Try generated_articles with site_id match
+      const { data: article } = await context.supabase
+        .from('generated_articles')
+        .select('title, content, keyword, seo_description')
+        .eq('id', post_id)
+        .eq('site_id', site_id)
+        .maybeSingle()
+
+      if (article) {
+        post = { ...article, focus_keyword: article.keyword }
+      } else {
+        // Fallback: try generated_articles by id only (site_id may differ)
+        const { data: articleById } = await context.supabase
+          .from('generated_articles')
+          .select('title, content, keyword, seo_description')
+          .eq('id', post_id)
+          .maybeSingle()
+
+        if (articleById) {
+          post = { ...articleById, focus_keyword: articleById.keyword }
+        }
+      }
+    }
 
     if (!post) throw new Error('Post not found')
 
@@ -357,22 +387,39 @@ Return ONLY valid JSON in this format:
         focus_keyword: promptResult.focus_keyword,
       }, context)
 
-      const { data: post } = await context.supabase
+      // Try to push to WordPress if linked
+      // Check posts table first, then generated_articles for wp_post_id
+      let wpPostId: number | null = null
+
+      const { data: wpRow } = await context.supabase
         .from('posts')
         .select('wp_post_id')
         .eq('id', post_id)
-        .single()
+        .maybeSingle()
 
-      if (!post?.wp_post_id) throw new Error('Post has no linked WordPress post ID')
+      if (wpRow?.wp_post_id) {
+        wpPostId = wpRow.wp_post_id
+      } else {
+        const { data: articleRow } = await context.supabase
+          .from('generated_articles')
+          .select('wp_post_id')
+          .eq('id', post_id)
+          .maybeSingle()
+        wpPostId = articleRow?.wp_post_id || null
+      }
 
-      const wpResult = await this.pushToWordPress({
-        site_id,
-        wp_post_id: post.wp_post_id,
-        image_base64: imageResult.image_base64,
-        alt_text: seoResult.alt_text,
-        caption: seoResult.caption,
-        title: seoResult.title,
-      }, context)
+      let wpResult: { media_id?: number; media_url?: string } = {}
+
+      if (wpPostId) {
+        wpResult = await this.pushToWordPress({
+          site_id,
+          wp_post_id: wpPostId,
+          image_base64: imageResult.image_base64,
+          alt_text: seoResult.alt_text,
+          caption: seoResult.caption,
+          title: seoResult.title,
+        }, context)
+      }
 
       await context.emitEvent({
         event_type: 'banana.pipeline_completed',
@@ -380,8 +427,8 @@ Return ONLY valid JSON in this format:
         payload: {
           site_id, post_id,
           prompt: promptResult.prompt,
-          media_id: wpResult.media_id,
-          media_url: wpResult.media_url,
+          media_id: wpResult.media_id || null,
+          media_url: wpResult.media_url || null,
           alt_text: seoResult.alt_text,
           caption: seoResult.caption,
         },
@@ -395,8 +442,8 @@ Return ONLY valid JSON in this format:
         alt_text: seoResult.alt_text,
         caption: seoResult.caption,
         media_title: seoResult.title,
-        media_id: wpResult.media_id,
-        media_url: wpResult.media_url,
+        media_id: wpResult.media_id || null,
+        media_url: wpResult.media_url || null,
       }
     } catch (error) {
       await context.emitEvent({
@@ -417,8 +464,14 @@ Return ONLY valid JSON in this format:
     params: Record<string, any>,
     context: ModuleContext
   ): Promise<Record<string, any>> {
-    const { site_id, image_base64 } = params
-    if (!site_id || !image_base64) throw new Error('site_id and image_base64 are required')
+    const { site_id, images, image_base64 } = params
+    // Support both: new multi-image `images` array and legacy single `image_base64`
+    const imageList: string[] = images
+      ? (Array.isArray(images) ? images : [images])
+      : image_base64 ? [image_base64] : []
+
+    if (!site_id || imageList.length === 0) throw new Error('site_id and at least one image are required')
+    if (imageList.length > 10) throw new Error('Maximum 10 reference images allowed')
 
     const geminiKey = context.apiKeys['gemini']
     if (!geminiKey) throw new Error('Gemini API key not configured')
@@ -426,20 +479,25 @@ Return ONLY valid JSON in this format:
     const { GoogleGenAI } = await import('@google/genai')
     const ai = new GoogleGenAI({ apiKey: geminiKey })
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        {
-          inlineData: {
-            mimeType: 'image/png',
-            data: image_base64,
-          },
-        },
-        {
-          text: `You are an art director analyzing a reference image for consistent brand imagery.
+    const imageCount = imageList.length
+    const plural = imageCount > 1
 
-Analyze this image and describe its visual style in detail so that an AI image generator can recreate similar images on different topics. Cover:
+    // Build contents array: all images first, then the text prompt
+    const contents: any[] = imageList.map(img => ({
+      inlineData: {
+        mimeType: 'image/png',
+        data: img,
+      },
+    }))
 
+    contents.push({
+      text: `You are an art director analyzing ${plural ? `${imageCount} reference images` : 'a reference image'} for consistent brand imagery.
+
+${plural
+  ? `These ${imageCount} images represent the desired visual style for a brand. Identify the COMMON visual patterns, style elements, and design language shared across all images. Focus on what makes them look cohesive as a set.`
+  : 'Analyze this image and describe its visual style in detail so that an AI image generator can recreate similar images on different topics.'}
+
+Cover:
 1. **Art style** (e.g., flat illustration, 3D render, watercolor, photorealistic, minimalist vector, isometric, etc.)
 2. **Color palette** (dominant colors, accent colors, overall tone — warm/cool/neutral)
 3. **Composition** (layout, perspective, depth of field, framing)
@@ -451,8 +509,11 @@ Analyze this image and describe its visual style in detail so that an AI image g
 Write a concise style description (200-400 words) that can be appended to any image generation prompt to achieve this same look. Write it as direct instructions, e.g., "Use flat vector illustration style with..."
 
 Return ONLY the style description, no preamble or explanation.`,
-        },
-      ],
+    })
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents,
     })
 
     const stylePrompt = response.text?.trim() || ''
@@ -463,6 +524,6 @@ Return ONLY the style description, no preamble or explanation.`,
       .update({ cover_style_prompt: stylePrompt })
       .eq('id', site_id)
 
-    return { style_prompt: stylePrompt }
+    return { style_prompt: stylePrompt, images_analyzed: imageCount }
   }
 }
