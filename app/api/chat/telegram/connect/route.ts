@@ -39,8 +39,10 @@ async function handlePersonalBot(userId: string, botToken: string) {
     return NextResponse.json({ error: 'Invalid bot token' }, { status: 400 })
   }
 
-  const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/chat/telegram/webhook`
-  await setTelegramWebhook(botToken, webhookUrl)
+  const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL
+  if (appUrl) {
+    await setTelegramWebhook(botToken, `${appUrl}/api/chat/telegram/webhook`)
+  }
 
   const { data: channel, error } = await supabase
     .from('chat_channels')
@@ -85,14 +87,17 @@ async function handleSharedBot(userId: string) {
   }
 
   // Ensure webhook is set for shared bot
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL
-  console.log('[Connect] NEXT_PUBLIC_APP_URL:', appUrl)
-  const webhookUrl = `${appUrl}/api/chat/telegram/webhook`
-  try {
-    await setTelegramWebhook(sharedToken, webhookUrl)
-    console.log('[Connect] Webhook set to:', webhookUrl)
-  } catch (err: any) {
-    console.error('[Connect] Failed to set webhook:', err.message)
+  const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL
+  if (appUrl) {
+    const webhookUrl = `${appUrl}/api/chat/telegram/webhook`
+    try {
+      await setTelegramWebhook(sharedToken, webhookUrl)
+      console.log('[Connect] Webhook set to:', webhookUrl)
+    } catch (err: any) {
+      console.error('[Connect] Failed to set webhook:', err.message)
+    }
+  } else {
+    console.warn('[Connect] No APP_URL set, skipping webhook setup')
   }
 
   // Generate a unique link code
