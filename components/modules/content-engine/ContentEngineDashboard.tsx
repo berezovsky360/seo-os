@@ -18,6 +18,7 @@ import {
   Loader2,
   AlertCircle,
   Clock,
+  Newspaper,
 } from 'lucide-react'
 import {
   useContentFeeds,
@@ -377,11 +378,13 @@ function FeedDetailView({ feed, onBack, onPoll, pollingId }: {
                 <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3 max-w-[400px]">
-                      {item.image_url && (
-                        <div className="w-10 h-10 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
-                          <img src={item.image_url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = 'none' }} />
-                        </div>
-                      )}
+                      <div className="w-10 h-10 flex-shrink-0 rounded-lg overflow-hidden bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
+                        {item.image_url ? (
+                          <img src={item.image_url} alt="" className="w-full h-full object-cover" onError={(e) => { const el = e.target as HTMLImageElement; el.style.display = 'none'; el.parentElement!.classList.add('bg-gradient-to-br', 'from-indigo-50', 'to-purple-50'); }} />
+                        ) : (
+                          <Newspaper size={16} className="text-indigo-300" />
+                        )}
+                      </div>
                       <div className="min-w-0">
                         <p className="font-medium text-gray-900 truncate">{item.title}</p>
                         {item.url && (
@@ -583,11 +586,13 @@ function ItemsTab() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3 max-w-[300px]">
-                          {item.image_url && (
-                            <div className="w-10 h-10 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
-                              <img src={item.image_url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = 'none' }} />
-                            </div>
-                          )}
+                          <div className="w-10 h-10 flex-shrink-0 rounded-lg overflow-hidden bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
+                            {item.image_url ? (
+                              <img src={item.image_url} alt="" className="w-full h-full object-cover" onError={(e) => { const el = e.target as HTMLImageElement; el.style.display = 'none'; el.parentElement!.classList.add('bg-gradient-to-br', 'from-indigo-50', 'to-purple-50'); }} />
+                            ) : (
+                              <Newspaper size={16} className="text-indigo-300" />
+                            )}
+                          </div>
                           <span className="font-medium text-gray-900 truncate">{item.title}</span>
                         </div>
                       </td>
@@ -650,11 +655,13 @@ function ItemDetail({ item }: { item: any }) {
 
   return (
     <div className="space-y-3">
-      {item.image_url && (
-        <div className="w-full max-w-md h-40 rounded-lg overflow-hidden bg-gray-100">
-          <img src={item.image_url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = 'none' }} />
-        </div>
-      )}
+      <div className="w-full max-w-md h-40 rounded-lg overflow-hidden bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
+        {item.image_url ? (
+          <img src={item.image_url} alt="" className="w-full h-full object-cover" onError={(e) => { const el = e.target as HTMLImageElement; el.style.display = 'none'; }} />
+        ) : (
+          <Newspaper size={32} className="text-indigo-200" />
+        )}
+      </div>
       {item.score_reasoning && (
         <div>
           <span className="text-xs font-semibold text-gray-500 uppercase">Score Reasoning</span>

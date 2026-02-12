@@ -6,6 +6,7 @@ import {
   TrendingUp, TrendingDown, Search,
   Globe, BarChart3, FileText, Target, Compass, Zap, Shield,
   ArrowUpRight, ArrowDownRight, Minus, Info, X, Microscope,
+  Rss, Link2, Unlink,
 } from 'lucide-react'
 import { useSites } from '@/hooks/useSites'
 import {
@@ -25,6 +26,7 @@ import {
   usePrecheck,
   useCompetitorSnapshots,
 } from '@/hooks/useCompetitorAnalysis'
+import { useContentFeeds, useCreateFeed, useDeleteFeed } from '@/hooks/useContentEngine'
 import type {
   Competitor,
   ContentGapItem,
@@ -638,6 +640,29 @@ function OverviewTab({ competitor, siteId }: { competitor: Competitor; siteId: s
   const startCrawl = useStartCrawl()
   const { user } = useAuth()
 
+  // RSS feed sync for Content Engine
+  const { data: allFeeds = [] } = useContentFeeds()
+  const createFeed = useCreateFeed()
+  const deleteFeedMutation = useDeleteFeed()
+  const [rssUrl, setRssUrl] = useState('')
+
+  const linkedFeed = (allFeeds as any[]).find((f: any) =>
+    f.feed_url?.includes(competitor.domain) || f.name?.toLowerCase().includes(competitor.domain.split('.')[0])
+  )
+
+  const handleSyncRSS = async () => {
+    const feedUrl = rssUrl.trim() || `https://${competitor.domain}/feed/`
+    const feedName = competitor.name || competitor.domain
+    await createFeed.mutateAsync({ name: feedName, feed_url: feedUrl, site_id: siteId })
+    setRssUrl('')
+  }
+
+  const handleUnlinkRSS = () => {
+    if (!linkedFeed) return
+    if (!confirm('Disconnect RSS feed from this competitor?')) return
+    deleteFeedMutation.mutate(linkedFeed.id)
+  }
+
   const metrics = [
     { label: 'Domain Rank', value: competitor.domain_rank ?? '—', color: 'text-indigo-600' },
     { label: 'Organic Traffic', value: competitor.organic_etv != null ? formatNumber(competitor.organic_etv) : '—', color: 'text-emerald-600' },
@@ -704,6 +729,59 @@ function OverviewTab({ competitor, siteId }: { competitor: Competitor; siteId: s
           >
             {startCrawl.isPending ? <Loader2 size={12} className="animate-spin" /> : <Microscope size={12} />}
             Crawl
+          </button>
+        </div>
+      )}
+
+      {/* RSS Feed Sync — Content Engine integration */}
+      {hasData && !linkedFeed && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+          <div className="flex items-center gap-3">
+            <Rss size={16} className="text-orange-500 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-orange-800">RSS Feed Detected</p>
+              <p className="text-xs text-orange-600 mt-0.5">
+                Sync {competitor.domain} RSS feed with Content Engine to track their new pages in Overview.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-3 pl-7">
+            <input
+              type="text"
+              placeholder={`https://${competitor.domain}/feed/`}
+              value={rssUrl}
+              onChange={(e) => setRssUrl(e.target.value)}
+              className="flex-1 px-3 py-1.5 text-xs border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white"
+            />
+            <button
+              onClick={handleSyncRSS}
+              disabled={createFeed.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white text-xs font-semibold rounded-lg hover:bg-orange-700 disabled:opacity-50"
+            >
+              {createFeed.isPending ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />}
+              Sync RSS
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Linked RSS Feed */}
+      {hasData && linkedFeed && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
+          <Rss size={16} className="text-green-500 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-green-800">RSS feed synced</p>
+            <p className="text-xs text-green-600 mt-0.5">
+              {linkedFeed.feed_url} — {linkedFeed.last_item_count || 0} items tracked
+            </p>
+          </div>
+          <button
+            onClick={handleUnlinkRSS}
+            disabled={deleteFeedMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-red-600 text-xs font-semibold rounded-lg border border-red-200 hover:bg-red-50 disabled:opacity-50"
+          >
+            {deleteFeedMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Unlink size={12} />}
+            Disconnect
           </button>
         </div>
       )}

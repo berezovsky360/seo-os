@@ -5,7 +5,6 @@ import { X, Plus, Globe } from 'lucide-react';
 import { useCreateSite, useSites } from '@/hooks/useSites';
 import { useWorkspace } from '@/lib/contexts/WorkspaceContext';
 import { useToast } from '@/lib/contexts/ToastContext';
-import { THEME_COLORS } from '@/constants';
 
 interface AddSiteModalProps {
   isOpen: boolean;
@@ -15,7 +14,6 @@ interface AddSiteModalProps {
 export default function AddSiteModal({ isOpen, onClose }: AddSiteModalProps) {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const [theme, setTheme] = useState('hyper-blue');
   const [isCompetitor, setIsCompetitor] = useState(false);
 
   const createSite = useCreateSite();
@@ -50,7 +48,6 @@ export default function AddSiteModal({ isOpen, onClose }: AddSiteModalProps) {
       {
         name: name.trim(),
         url: normalizedUrl,
-        theme,
         is_competitor: isCompetitor,
         workspace_id: currentWorkspaceId || undefined,
       },
@@ -59,7 +56,6 @@ export default function AddSiteModal({ isOpen, onClose }: AddSiteModalProps) {
           toast.success(`Site "${name}" added successfully!`);
           setName('');
           setUrl('');
-          setTheme('hyper-blue');
           setIsCompetitor(false);
           onClose();
         },
@@ -135,36 +131,6 @@ export default function AddSiteModal({ isOpen, onClose }: AddSiteModalProps) {
               />
             </div>
             <p className="text-xs text-gray-500 mt-1">Just enter the domain (https:// will be added automatically)</p>
-          </div>
-
-          {/* Theme Selector */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-3">
-              Theme Color
-            </label>
-            <div className="grid grid-cols-5 gap-3">
-              {Object.entries(THEME_COLORS).map(([key, colors]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setTheme(key)}
-                  className={`relative h-12 rounded-xl transition-all ${
-                    theme === key
-                      ? 'ring-2 ring-indigo-500 ring-offset-2 scale-105'
-                      : 'hover:scale-105'
-                  }`}
-                  style={{
-                    background: `linear-gradient(135deg, ${colors.from}, ${colors.to})`,
-                  }}
-                >
-                  {theme === key && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-4 h-4 bg-white rounded-full" />
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Competitor Toggle */}
