@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Site, UserRole, SiteStatus } from '../types';
+import { getRouteForView } from '@/lib/utils/routes';
 import {
   PlusCircle, FileText, CheckCircle, Sparkles, Activity, AlertCircle, Search,
   TrendingUp, Settings, ExternalLink, Calendar, Wifi, WifiOff,
@@ -20,11 +22,10 @@ interface DashboardProps {
   sites: Site[];
   isLoading?: boolean;
   error?: Error | null;
-  onGeneratePost: (site: Site) => void;
+  onGeneratePost?: (site: Site) => void;
   userRole: UserRole;
   onDeleteSite: (siteId: string) => void;
   onSelectSite: (site: Site) => void;
-  onChangeView?: (view: any) => void;
 }
 
 // WordPress Icon Component (white for light theme, dark for future dark theme)
@@ -90,7 +91,8 @@ function isSiteConnected(site: Site): boolean {
   return !!(site.wp_username && site.wp_app_password);
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGeneratePost, userRole, onDeleteSite, onSelectSite, onChangeView }) => {
+const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGeneratePost, userRole, onDeleteSite, onSelectSite }) => {
+  const router = useRouter();
   const canAddProperty = userRole !== 'user';
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddSiteModalOpen, setIsAddSiteModalOpen] = useState(false);
@@ -547,7 +549,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
               <h2 className="text-xl font-bold text-gray-900 tracking-tight">Rank Pulse</h2>
             </div>
             <button
-              onClick={() => onChangeView && onChangeView('rank-pulse')}
+              onClick={() => router.push(getRouteForView('rank-pulse'))}
               className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 transition-colors"
             >
               View Details
@@ -623,7 +625,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
             {activeModules.map(mod => (
               <button
                 key={mod.id}
-                onClick={() => onChangeView && onChangeView(mod.viewState)}
+                onClick={() => router.push(getRouteForView(mod.viewState))}
                 className="flex items-center gap-2.5 px-4 py-3 bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all group"
               >
                 <div className={`w-8 h-8 rounded-xl ${mod.iconBg} flex items-center justify-center`}>

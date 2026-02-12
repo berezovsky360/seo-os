@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useRouter } from 'next/navigation'
 import { useBackgroundTasks } from '@/lib/contexts/BackgroundTaskContext'
 import type { BackgroundTask } from '@/lib/core/events'
 import {
@@ -73,6 +74,7 @@ function TaskRow({ task, onDismiss }: { task: BackgroundTask; onDismiss: () => v
 }
 
 function PanelContent() {
+  const router = useRouter()
   const { tasks, activeCount, hasRunning, dismissTask, clearCompleted, isExpanded, setIsExpanded } =
     useBackgroundTasks()
 
@@ -135,7 +137,7 @@ function PanelContent() {
             <button
               onClick={() => {
                 setIsExpanded(false)
-                window.dispatchEvent(new CustomEvent('navigate-view', { detail: 'task-history' }))
+                router.push('/dashboard/tasks')
               }}
               className="px-2 py-0.5 text-[10px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
               title="View full history"

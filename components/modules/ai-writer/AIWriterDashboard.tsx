@@ -11,12 +11,11 @@ import {
   useAIWriterSettings, useUpdateAIWriterModel, useAIUsageStats, useTestAIWriter,
 } from '@/hooks/useAIWriter'
 import { getAvailableModels } from '@/lib/modules/ai-writer/pricing'
+import { useRouter } from 'next/navigation'
 import { useToast } from '@/lib/contexts/ToastContext'
-import type { ViewState } from '@/types'
 
 interface AIWriterDashboardProps {
   onBack?: () => void
-  onChangeView?: (view: ViewState) => void
 }
 
 const FEATURES = [
@@ -28,7 +27,8 @@ const FEATURES = [
 
 const AVAILABLE_MODELS = getAvailableModels()
 
-export default function AIWriterDashboard({ onBack, onChangeView }: AIWriterDashboardProps) {
+export default function AIWriterDashboard({ onBack }: AIWriterDashboardProps) {
+  const router = useRouter()
   const { data: apiKeys = [], isLoading: keysLoading } = useApiKeys()
   const validateKey = useValidateApiKey()
   const toast = useToast()
@@ -159,7 +159,7 @@ export default function AIWriterDashboard({ onBack, onChangeView }: AIWriterDash
                   </button>
                 )}
                 <button
-                  onClick={() => onChangeView?.('key-management' as ViewState)}
+                  onClick={() => router.push('/dashboard/keys')}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
                 >
                   <Key size={12} />

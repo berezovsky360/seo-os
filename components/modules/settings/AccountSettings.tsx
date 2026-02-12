@@ -6,13 +6,12 @@ import {
   AlertTriangle, Loader2, Smartphone, Globe, CheckCircle2,
   Laptop, X, MapPin,
 } from 'lucide-react'
-import type { ViewState } from '@/types'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/contexts/AuthContext'
 import { supabase } from '@/lib/supabase/client'
 
 interface AccountSettingsProps {
   onBack?: () => void
-  onChangeView?: (view: ViewState) => void
 }
 
 // ====== Section Card wrapper ======
@@ -36,7 +35,8 @@ function Section({ title, icon: Icon, children, danger }: {
 
 // ====== Component ======
 
-export default function AccountSettings({ onBack, onChangeView }: AccountSettingsProps) {
+export default function AccountSettings({ onBack }: AccountSettingsProps) {
+  const router = useRouter()
   const { user } = useAuth()
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -339,7 +339,7 @@ export default function AccountSettings({ onBack, onChangeView }: AccountSetting
               <p className="text-xs text-gray-500 mt-0.5">Manage API keys for Gemini, DataForSEO, GSC, and more</p>
             </div>
             <button
-              onClick={() => onChangeView?.('key-management' as ViewState)}
+              onClick={() => router.push('/dashboard/keys')}
               className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors"
             >
               <Key size={14} />

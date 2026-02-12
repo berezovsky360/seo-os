@@ -2,14 +2,12 @@
 
 import { useState } from 'react'
 import { ChevronLeft, Users, BarChart3, Activity } from 'lucide-react'
-import { ViewState } from '@/types'
 import AdminUsersTab from './AdminUsersTab'
 import AdminDashboardTab from './AdminDashboardTab'
 import AdminActivityTab from './AdminActivityTab'
 
 interface AdminPanelProps {
   onBack?: () => void
-  onChangeView?: (view: ViewState) => void
 }
 
 type Tab = 'users' | 'dashboard' | 'activity'

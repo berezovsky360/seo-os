@@ -22,9 +22,9 @@ export default function EditorPage({ params }: { params: Promise<{ articleId: st
   // Navigate back to the site page (not browser history)
   const goBackToSite = () => {
     if (siteId) {
-      router.push(`/?view=site-details&siteId=${siteId}`)
+      router.push(`/dashboard/sites/${siteId}`)
     } else {
-      router.push('/')
+      router.push('/dashboard')
     }
   }
 

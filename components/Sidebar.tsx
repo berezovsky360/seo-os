@@ -2,7 +2,8 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ViewState } from '../types';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import { ShieldCheck } from '@phosphor-icons/react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import {
@@ -40,8 +41,6 @@ function getAvatarEmoji(user: any): string | null {
 }
 
 interface SidebarProps {
-  currentView: ViewState;
-  onChangeView: (view: ViewState) => void;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -64,38 +63,60 @@ const Tooltip = ({ label, anchor }: { label: string; anchor: DOMRect | null }) =
   );
 };
 
-// ─── NavIcon ───
+// ─── NavIcon (Link-based) ───
 const NavIcon = ({
   icon: Icon,
   label,
+  href,
   active = false,
   onClick,
 }: {
   icon: React.ElementType;
   label: string;
+  href?: string;
   active?: boolean;
-  onClick: () => void;
+  onClick?: () => void;
 }) => {
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
-  const ref = useRef<HTMLButtonElement>(null);
+  const ref = useRef<HTMLAnchorElement | HTMLButtonElement>(null);
 
   const show = useCallback(() => {
     if (ref.current) setAnchor(ref.current.getBoundingClientRect());
   }, []);
   const hide = useCallback(() => setAnchor(null), []);
 
+  const cls = `w-12 h-12 flex items-center justify-center rounded-2xl mb-1 cursor-pointer transition-all duration-200 ${
+    active
+      ? 'bg-indigo-50 text-indigo-600'
+      : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
+  }`;
+
+  if (href) {
+    return (
+      <>
+        <Link
+          ref={ref as React.Ref<HTMLAnchorElement>}
+          href={href}
+          onClick={onClick}
+          onMouseEnter={show}
+          onMouseLeave={hide}
+          className={cls}
+        >
+          <Icon size={24} weight="fill" />
+        </Link>
+        <Tooltip label={label} anchor={anchor} />
+      </>
+    );
+  }
+
   return (
     <>
       <button
-        ref={ref}
+        ref={ref as React.Ref<HTMLButtonElement>}
         onClick={onClick}
         onMouseEnter={show}
         onMouseLeave={hide}
-        className={`w-12 h-12 flex items-center justify-center rounded-2xl mb-1 cursor-pointer transition-all duration-200 ${
-          active
-            ? 'bg-indigo-50 text-indigo-600'
-            : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
-        }`}
+        className={cls}
       >
         <Icon size={24} weight="fill" />
       </button>
@@ -105,28 +126,27 @@ const NavIcon = ({
 };
 
 // ─── Core nav items (static, always visible) ───
-const CORE_NAV: { id: string; icon: React.ElementType; label: string; viewState: ViewState }[] = [
-  { id: 'home', icon: House, label: 'Home', viewState: 'dashboard' },
-  { id: 'content-lots', icon: Swatches, label: 'Content Lots', viewState: 'content-lots' },
-  { id: 'calendar', icon: CalendarBlank, label: 'Calendar', viewState: 'calendar' },
-  { id: 'recipes', icon: Lightning, label: 'Automations', viewState: 'recipes' },
+const CORE_NAV: { id: string; icon: React.ElementType; label: string; href: string }[] = [
+  { id: 'home', icon: House, label: 'Home', href: '/dashboard' },
+  { id: 'content-lots', icon: Swatches, label: 'Content Lots', href: '/dashboard/content-lots' },
+  { id: 'calendar', icon: CalendarBlank, label: 'Calendar', href: '/dashboard/calendar' },
+  { id: 'recipes', icon: Lightning, label: 'Automations', href: '/dashboard/recipes' },
 ];
 
-const BOTTOM_NAV: { id: string; icon: React.ElementType; label: string; viewState: ViewState }[] = [
-  { id: 'marketplace', icon: Storefront, label: 'Marketplace', viewState: 'marketplace' },
-  { id: 'settings', icon: GearSix, label: 'Settings', viewState: 'brands' },
+const BOTTOM_NAV: { id: string; icon: React.ElementType; label: string; href: string }[] = [
+  { id: 'marketplace', icon: Storefront, label: 'Marketplace', href: '/dashboard/marketplace' },
+  { id: 'settings', icon: GearSix, label: 'Settings', href: '/dashboard/settings' },
 ];
 
 // ─── Workspace Panel (portalled overlay) ───
 const WorkspacePanel = ({
   isOpen,
   onClose,
-  onNavigate,
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onNavigate: (view: ViewState) => void;
 }) => {
+  const router = useRouter();
   const { user, signOut, userProfile, userRole } = useAuth();
   const { workspaces, currentWorkspaceId, isAllWorkspaces, switchWorkspace } = useWorkspace();
   const { linkedAccounts, currentAccountEmail, addAccount, switchAccount, removeAccount } = useAccountRegistry();
@@ -352,7 +372,7 @@ const WorkspacePanel = ({
         {/* Divider + Actions */}
         <div className="border-t border-gray-100 px-2 py-2">
           <button
-            onClick={() => { onNavigate('brands' as ViewState); onClose(); }}
+            onClick={() => { router.push('/dashboard/settings'); onClose(); }}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors text-left text-sm font-medium"
           >
             <GearSix size={16} />
@@ -360,7 +380,7 @@ const WorkspacePanel = ({
           </button>
           {userRole === 'super_admin' && (
             <button
-              onClick={() => { onNavigate('admin'); onClose(); }}
+              onClick={() => { router.push('/dashboard/admin'); onClose(); }}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-500 hover:bg-indigo-50 hover:text-indigo-700 transition-colors text-left text-sm font-medium"
             >
               <ShieldCheck size={16} />
@@ -515,8 +535,9 @@ const ThemeToggle = () => {
 };
 
 // ─── Sidebar ───
-const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, isOpen, onClose }) => {
+const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const { user, userRole } = useAuth();
+  const pathname = usePathname();
   const [wsOpen, setWsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -524,10 +545,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, isOpen, on
   const avatarEmoji = getAvatarEmoji(user);
   const initials = getInitials(user);
 
-  const handleNavClick = (view: ViewState) => {
-    onChangeView(view);
-    onClose();
-  };
+  const isActive = (href: string) =>
+    href === '/dashboard'
+      ? pathname === '/dashboard'
+      : pathname === href || pathname.startsWith(href + '/');
 
   return (
     <>
@@ -568,8 +589,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, isOpen, on
               key={item.id}
               icon={item.icon}
               label={item.label}
-              active={currentView === item.viewState}
-              onClick={() => handleNavClick(item.viewState)}
+              href={item.href}
+              active={isActive(item.href)}
+              onClick={onClose}
             />
           ))}
         </div>
@@ -585,8 +607,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, isOpen, on
             <NavIcon
               icon={ShieldCheck}
               label="Admin Panel"
-              active={currentView === 'admin'}
-              onClick={() => handleNavClick('admin')}
+              href="/dashboard/admin"
+              active={isActive('/dashboard/admin')}
+              onClick={onClose}
             />
           )}
           <div className="w-6 h-px bg-gray-100 mb-2" />
@@ -595,8 +618,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, isOpen, on
               key={item.id}
               icon={item.icon}
               label={item.label}
-              active={currentView === item.viewState}
-              onClick={() => handleNavClick(item.viewState)}
+              href={item.href}
+              active={isActive(item.href)}
+              onClick={onClose}
             />
           ))}
         </div>
@@ -607,7 +631,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, isOpen, on
         <WorkspacePanel
           isOpen={wsOpen}
           onClose={() => setWsOpen(false)}
-          onNavigate={handleNavClick}
         />
       )}
     </>

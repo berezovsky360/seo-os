@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Globe, Sparkles, Search, BarChart3, Image as ImageIcon,
   Loader2, AlertCircle, ChevronLeft, Store, Settings, X, ShieldAlert,
@@ -11,7 +12,7 @@ import { useToggleModule } from '@/hooks/useModules';
 import { useModuleStats } from '@/hooks/useMarketplaceTemplates';
 import { useToast } from '@/lib/contexts/ToastContext';
 import type { ModuleId } from '@/lib/core/events';
-import type { ViewState } from '@/types';
+import { getRouteForView } from '@/lib/utils/routes';
 
 // Module card metadata
 const MODULE_CARDS: {
@@ -227,10 +228,10 @@ const MODULE_CARDS: {
 
 interface MarketplaceProps {
   onBack?: () => void;
-  onChangeView?: (view: ViewState) => void;
 }
 
-export default function Marketplace({ onBack, onChangeView }: MarketplaceProps) {
+export default function Marketplace({ onBack }: MarketplaceProps) {
+  const router = useRouter();
   const { isModuleEnabled, apiKeys } = useCore();
   const toggleModule = useToggleModule();
   const { data: moduleStats = {} } = useModuleStats();
@@ -277,8 +278,8 @@ export default function Marketplace({ onBack, onChangeView }: MarketplaceProps) 
   };
 
   const handleConfigure = (viewState?: string) => {
-    if (viewState && onChangeView) {
-      onChangeView(viewState as ViewState);
+    if (viewState) {
+      router.push(getRouteForView(viewState));
     }
   };
 
@@ -417,7 +418,7 @@ export default function Marketplace({ onBack, onChangeView }: MarketplaceProps) 
                     <>
                       <button
                         onClick={() => handleConfigure(mod.viewState)}
-                        disabled={!onChangeView}
+                        disabled={false}
                         className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200"
                       >
                         <Settings size={14} />
