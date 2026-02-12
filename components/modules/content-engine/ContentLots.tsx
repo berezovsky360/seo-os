@@ -6,13 +6,14 @@ import {
   Star, TrendingUp, Zap, ListChecks, ExternalLink,
   ArrowRight, ChevronDown, ChevronUp, Rss, SlidersHorizontal,
   Shuffle, ArrowDownNarrowWide, ArrowUpNarrowWide, Trophy,
+  Plus, Trash2, RefreshCw, Newspaper,
 } from 'lucide-react'
 import {
   useSwipeableItems, useSwipe, useUndoSwipe, SwipeableItem,
   useSwipeDecisions, useUpdateSwipeDirection,
   type SwipeDecision, type DecisionsByFeed, type SwipeFilter,
 } from '@/hooks/useContentLots'
-import { useContentFeeds } from '@/hooks/useContentEngine'
+import { useContentFeeds, useCreateFeed, useDeleteFeed, usePollFeed } from '@/hooks/useContentEngine'
 
 interface ContentLotsProps {
   onBack: () => void
@@ -161,16 +162,30 @@ function SwipeCard({ item, isTop, stackIndex, onSwipe }: SwipeCardProps) {
         )}
 
         {/* Cover image */}
-        {item.image_url && (
-          <div className="h-40 flex-shrink-0 bg-gray-100 overflow-hidden">
+        <div className="h-40 flex-shrink-0 overflow-hidden relative">
+          {item.image_url ? (
             <img
               src={item.image_url}
               alt=""
               className="w-full h-full object-cover"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+              onError={(e) => {
+                const el = e.target as HTMLImageElement
+                el.style.display = 'none'
+                el.parentElement!.classList.add('bg-gradient-to-br', 'from-indigo-100', 'to-purple-50')
+                const icon = el.parentElement!.querySelector('.placeholder-icon')
+                if (icon) (icon as HTMLElement).style.display = 'flex'
+              }}
             />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-indigo-100 to-purple-50" />
+          )}
+          <div
+            className="placeholder-icon absolute inset-0 items-center justify-center pointer-events-none"
+            style={{ display: item.image_url ? 'none' : 'flex' }}
+          >
+            <Newspaper size={36} className="text-indigo-300/60" />
           </div>
-        )}
+        </div>
 
         {/* Card content */}
         <div className="p-5 flex-1 flex flex-col overflow-hidden">
@@ -533,10 +548,30 @@ export default function ContentLots({ onBack }: ContentLotsProps) {
   const [view, setView] = useState<View>('swipe')
   const [showSettings, setShowSettings] = useState(false)
 
-  // Feed filter + sort
+  // Feed filter + sort + management
   const { data: allFeeds = [] } = useContentFeeds()
+  const createFeed = useCreateFeed()
+  const deleteFeed = useDeleteFeed()
+  const pollFeed = usePollFeed()
   const [selectedFeedIds, setSelectedFeedIds] = useState<string[]>([]) // empty = all
   const [sortOrder, setSortOrder] = useState<SwipeFilter['sort']>('score')
+  const [showAddFeed, setShowAddFeed] = useState(false)
+  const [newFeedUrl, setNewFeedUrl] = useState('')
+  const [newFeedName, setNewFeedName] = useState('')
+
+  const handleAddFeed = async () => {
+    if (!newFeedUrl.trim()) return
+    const name = newFeedName.trim() || new URL(newFeedUrl.trim()).hostname
+    await createFeed.mutateAsync({ name, feed_url: newFeedUrl.trim() })
+    setNewFeedUrl('')
+    setNewFeedName('')
+    setShowAddFeed(false)
+  }
+
+  const handleDeleteFeed = (feedId: string) => {
+    if (!confirm('Delete this feed and all its items?')) return
+    deleteFeed.mutate(feedId)
+  }
 
   const filter: SwipeFilter | undefined = useMemo(() => {
     const f: SwipeFilter = {}
@@ -732,19 +767,65 @@ export default function ContentLots({ onBack }: ContentLotsProps) {
             </div>
           </div>
 
-          {/* Feed filter */}
+          {/* Feed filter + management */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">RSS Feeds</label>
-              {selectedFeedIds.length > 0 && (
+              <div className="flex items-center gap-2">
+                {selectedFeedIds.length > 0 && (
+                  <button
+                    onClick={() => setSelectedFeedIds([])}
+                    className="text-[10px] text-indigo-600 font-medium hover:text-indigo-700"
+                  >
+                    Clear filter
+                  </button>
+                )}
                 <button
-                  onClick={() => setSelectedFeedIds([])}
-                  className="text-[10px] text-indigo-600 font-medium hover:text-indigo-700"
+                  onClick={() => setShowAddFeed(!showAddFeed)}
+                  className="flex items-center gap-1 text-[10px] text-indigo-600 font-medium hover:text-indigo-700"
                 >
-                  Clear filter
+                  <Plus size={10} />
+                  Add Feed
                 </button>
-              )}
+              </div>
             </div>
+
+            {/* Add feed inline form */}
+            {showAddFeed && (
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="text"
+                  placeholder="Feed URL (https://...)"
+                  value={newFeedUrl}
+                  onChange={(e) => setNewFeedUrl(e.target.value)}
+                  className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddFeed()}
+                />
+                <input
+                  type="text"
+                  placeholder="Name (optional)"
+                  value={newFeedName}
+                  onChange={(e) => setNewFeedName(e.target.value)}
+                  className="w-36 px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddFeed()}
+                />
+                <button
+                  onClick={handleAddFeed}
+                  disabled={!newFeedUrl.trim() || createFeed.isPending}
+                  className="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {createFeed.isPending ? <Loader2 size={12} className="animate-spin" /> : 'Add'}
+                </button>
+                <button
+                  onClick={() => { setShowAddFeed(false); setNewFeedUrl(''); setNewFeedName('') }}
+                  className="p-1.5 text-gray-400 hover:text-gray-600"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+
+            {/* Feed list */}
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 onClick={() => setSelectedFeedIds([])}
@@ -757,20 +838,41 @@ export default function ContentLots({ onBack }: ContentLotsProps) {
                 All Feeds
               </button>
               {(allFeeds as any[]).map((feed: any) => (
-                <button
-                  key={feed.id}
-                  onClick={() => toggleFeedFilter(feed.id)}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    selectedFeedIds.includes(feed.id)
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <Rss size={10} />
-                  {feed.name}
-                </button>
+                <div key={feed.id} className="flex items-center gap-0.5 group">
+                  <button
+                    onClick={() => toggleFeedFilter(feed.id)}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-l-lg text-xs font-medium transition-colors ${
+                      selectedFeedIds.includes(feed.id)
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <Rss size={10} />
+                    {feed.name}
+                  </button>
+                  <button
+                    onClick={() => pollFeed.mutate(feed.id)}
+                    disabled={pollFeed.isPending}
+                    className="p-1.5 bg-gray-100 hover:bg-blue-100 text-gray-400 hover:text-blue-600 rounded-none text-xs transition-colors disabled:opacity-50"
+                    title="Poll feed now"
+                  >
+                    <RefreshCw size={10} className={pollFeed.isPending ? 'animate-spin' : ''} />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteFeed(feed.id)}
+                    disabled={deleteFeed.isPending}
+                    className="p-1.5 bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-600 rounded-r-lg text-xs transition-colors disabled:opacity-50"
+                    title="Delete feed"
+                  >
+                    <Trash2 size={10} />
+                  </button>
+                </div>
               ))}
             </div>
+
+            {(allFeeds as any[]).length === 0 && !showAddFeed && (
+              <p className="text-xs text-gray-400 mt-2">No feeds yet. Click &quot;Add Feed&quot; to add an RSS source.</p>
+            )}
           </div>
         </div>
       )}
@@ -787,22 +889,38 @@ export default function ContentLots({ onBack }: ContentLotsProps) {
                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
                   <Inbox size={32} className="text-gray-300" />
                 </div>
-                <h2 className="text-lg font-bold text-gray-900">All caught up!</h2>
+                <h2 className="text-lg font-bold text-gray-900">
+                  {(allFeeds as any[]).length === 0 ? 'No RSS feeds yet' : 'All caught up!'}
+                </h2>
                 <p className="text-sm text-gray-500 max-w-xs">
-                  No more content to review. New items will appear after the next RSS poll.
+                  {(allFeeds as any[]).length === 0
+                    ? 'Add an RSS feed to start discovering content.'
+                    : 'No more content to review. New items will appear after the next RSS poll.'}
                 </p>
-                {swipedCount > 0 && (
-                  <p className="text-xs text-gray-400 mt-2">
-                    Reviewed {swipedCount} items this session
-                  </p>
+                {(allFeeds as any[]).length === 0 ? (
+                  <button
+                    onClick={() => { setShowSettings(true); setShowAddFeed(true) }}
+                    className="mt-3 flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+                  >
+                    <Plus size={14} />
+                    Add RSS Feed
+                  </button>
+                ) : (
+                  <>
+                    {swipedCount > 0 && (
+                      <p className="text-xs text-gray-400 mt-2">
+                        Reviewed {swipedCount} items this session
+                      </p>
+                    )}
+                    <button
+                      onClick={() => setView('decisions')}
+                      className="mt-3 flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+                    >
+                      <ListChecks size={14} />
+                      View Decisions
+                    </button>
+                  </>
                 )}
-                <button
-                  onClick={() => setView('decisions')}
-                  className="mt-3 flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
-                >
-                  <ListChecks size={14} />
-                  View Decisions
-                </button>
               </div>
             ) : (
               <div className="relative w-full max-w-md mx-auto" style={{ height: '520px' }}>

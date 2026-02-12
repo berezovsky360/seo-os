@@ -9,23 +9,39 @@ function extractImageUrl(item: Record<string, any>): string | null {
     return item.enclosure.url
   }
 
-  // 2. <media:content url="..." medium="image">
-  if (item['media:content']?.$?.url) {
-    return item['media:content'].$.url
+  // 2. <enclosure url="..."> without type — check if URL looks like an image
+  if (item.enclosure?.url && /\.(jpe?g|png|gif|webp|avif|svg)/i.test(item.enclosure.url)) {
+    return item.enclosure.url
   }
 
-  // 3. <media:thumbnail url="...">
-  if (item['media:thumbnail']?.$?.url) {
-    return item['media:thumbnail'].$.url
+  // 3. <media:content url="..." medium="image"> (single or array)
+  const mc = item['media:content']
+  if (mc) {
+    if (Array.isArray(mc)) {
+      const img = mc.find((m: any) => m.$?.url)
+      if (img?.$?.url) return img.$.url
+    } else if (mc.$?.url) {
+      return mc.$.url
+    }
   }
 
-  // 4. <itunes:image href="...">
+  // 4. <media:thumbnail url="...">
+  const mt = item['media:thumbnail']
+  if (mt) {
+    if (Array.isArray(mt)) {
+      if (mt[0]?.$?.url) return mt[0].$.url
+    } else if (mt.$?.url) {
+      return mt.$.url
+    }
+  }
+
+  // 5. <itunes:image href="...">
   if (item['itunes']?.image) {
     return item['itunes'].image
   }
 
-  // 5. Extract first <img src="..."> from content HTML
-  const html = item['content:encoded'] || item.content || ''
+  // 6. Extract first <img src="..."> from content HTML
+  const html = item['content:encoded'] || item.content || item.summary || ''
   if (html) {
     const match = html.match(/<img[^>]+src=["']([^"']+)["']/)
     if (match?.[1]) {
