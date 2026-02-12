@@ -39,9 +39,10 @@ export async function middleware(request: NextRequest) {
   const isPublicPath = publicPaths.some(path => pathname.startsWith(path))
   const isAuthApi = pathname.startsWith('/api/auth/')
   const isCronApi = pathname.startsWith('/api/cron/')
+  const isWebhookApi = pathname.startsWith('/api/chat/telegram/webhook')
 
   // Redirect unauthenticated users to login
-  if (!user && !isPublicPath && !isAuthApi && !isCronApi) {
+  if (!user && !isPublicPath && !isAuthApi && !isCronApi && !isWebhookApi) {
     const loginUrl = new URL('/login', request.url)
     if (pathname !== '/') {
       loginUrl.searchParams.set('redirect', pathname)
