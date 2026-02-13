@@ -8,7 +8,7 @@ import { ShieldCheck } from '@phosphor-icons/react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import {
   House, CalendarBlank, Lightning, Storefront, GearSix,
-  SignOut, Check, GearFine, Swatches,
+  SignOut, Check, GearFine, Swatches, ClipboardText, X,
 } from '@phosphor-icons/react';
 import { useBackgroundTasks } from '@/lib/contexts/BackgroundTaskContext';
 import { useTheme } from '@/lib/contexts/ThemeContext';
@@ -63,33 +63,56 @@ const Tooltip = ({ label, anchor }: { label: string; anchor: DOMRect | null }) =
   );
 };
 
-// ─── NavIcon (Link-based) ───
+// ─── NavIcon (Link-based, supports expanded mode for mobile labels) ───
 const NavIcon = ({
   icon: Icon,
   label,
   href,
   active = false,
   onClick,
+  expanded = false,
 }: {
   icon: React.ElementType;
   label: string;
   href?: string;
   active?: boolean;
   onClick?: () => void;
+  expanded?: boolean;
 }) => {
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const ref = useRef<HTMLAnchorElement | HTMLButtonElement>(null);
 
   const show = useCallback(() => {
-    if (ref.current) setAnchor(ref.current.getBoundingClientRect());
-  }, []);
+    if (ref.current && !expanded) setAnchor(ref.current.getBoundingClientRect());
+  }, [expanded]);
   const hide = useCallback(() => setAnchor(null), []);
 
-  const cls = `w-12 h-12 flex items-center justify-center rounded-2xl mb-1 cursor-pointer transition-all duration-200 ${
-    active
-      ? 'bg-indigo-50 text-indigo-600'
-      : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
-  }`;
+  const iconBlock = (
+    <div className="w-12 h-12 flex items-center justify-center rounded-2xl flex-shrink-0">
+      <Icon size={24} weight="fill" />
+    </div>
+  );
+
+  const cls = expanded
+    ? `flex items-center gap-2 w-full rounded-2xl mb-1 cursor-pointer transition-all duration-200 pr-3 ${
+        active
+          ? 'bg-indigo-50 text-indigo-600'
+          : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
+      }`
+    : `w-12 h-12 flex items-center justify-center rounded-2xl mb-1 cursor-pointer transition-all duration-200 ${
+        active
+          ? 'bg-indigo-50 text-indigo-600'
+          : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
+      }`;
+
+  const content = expanded ? (
+    <>
+      {iconBlock}
+      <span className={`text-sm font-semibold truncate ${active ? 'text-indigo-600' : 'text-gray-700'}`}>{label}</span>
+    </>
+  ) : (
+    <Icon size={24} weight="fill" />
+  );
 
   if (href) {
     return (
@@ -102,9 +125,9 @@ const NavIcon = ({
           onMouseLeave={hide}
           className={cls}
         >
-          <Icon size={24} weight="fill" />
+          {content}
         </Link>
-        <Tooltip label={label} anchor={anchor} />
+        {!expanded && <Tooltip label={label} anchor={anchor} />}
       </>
     );
   }
@@ -118,9 +141,9 @@ const NavIcon = ({
         onMouseLeave={hide}
         className={cls}
       >
-        <Icon size={24} weight="fill" />
+        {content}
       </button>
-      <Tooltip label={label} anchor={anchor} />
+      {!expanded && <Tooltip label={label} anchor={anchor} />}
     </>
   );
 };
@@ -560,16 +583,25 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         />
       )}
 
-      {/* Icon Rail */}
+      {/* Sidebar Rail — 72px icon-only on desktop, 70vw expanded on mobile */}
       <div className={`
-        fixed inset-y-0 left-0 z-40 w-[72px] bg-white flex flex-col items-center py-5 h-full
+        fixed inset-y-0 left-0 z-40 bg-white flex flex-col py-5 h-full
+        w-[70vw] max-w-[320px] md:w-[72px] md:items-center
         md:relative md:translate-x-0 md:z-20
         ${mounted ? 'transition-transform duration-300 ease-in-out' : ''}
         ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
 
+        {/* Mobile close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 md:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors z-10"
+        >
+          <X size={20} className="text-gray-500" />
+        </button>
+
         {/* Avatar → Workspaces */}
-        <div className="mb-6 flex-shrink-0">
+        <div className="mb-6 flex-shrink-0 px-3 md:px-0 md:self-center">
           <button
             onClick={() => setWsOpen(true)}
             className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-md hover:shadow-lg hover:scale-105 transition-all"
@@ -583,7 +615,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         </div>
 
         {/* Core Nav */}
-        <div className="flex flex-col items-center w-full px-3">
+        <div className="flex flex-col md:items-center w-full px-3">
           {CORE_NAV.map(item => (
             <NavIcon
               key={item.id}
@@ -592,6 +624,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               href={item.href}
               active={isActive(item.href)}
               onClick={onClose}
+              expanded={isOpen}
             />
           ))}
         </div>
@@ -600,8 +633,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         <div className="flex-1" />
 
         {/* Bottom Nav */}
-        <div className="flex flex-col items-center px-3">
+        <div className="flex flex-col md:items-center px-3">
           <TaskActivityButton />
+          <NavIcon
+            icon={ClipboardText}
+            label="Tasks"
+            href="/dashboard/tasks"
+            active={isActive('/dashboard/tasks')}
+            onClick={onClose}
+            expanded={isOpen}
+          />
           <ThemeToggle />
           {userRole === 'super_admin' && (
             <NavIcon
@@ -610,9 +651,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               href="/dashboard/admin"
               active={isActive('/dashboard/admin')}
               onClick={onClose}
+              expanded={isOpen}
             />
           )}
-          <div className="w-6 h-px bg-gray-100 mb-2" />
+          <div className="w-6 h-px bg-gray-100 mb-2 md:self-center" />
           {BOTTOM_NAV.map(item => (
             <NavIcon
               key={item.id}
@@ -621,6 +663,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               href={item.href}
               active={isActive(item.href)}
               onClick={onClose}
+              expanded={isOpen}
             />
           ))}
         </div>

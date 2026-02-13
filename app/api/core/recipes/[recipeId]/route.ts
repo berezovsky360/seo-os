@@ -30,6 +30,7 @@ export async function PUT(
     const ALLOWED_FIELDS = [
       'name', 'description', 'enabled', 'trigger_event',
       'trigger_conditions', 'actions', 'site_ids', 'graph_layout',
+      'archived_at',
     ]
     const updates: Record<string, any> = {}
     for (const key of ALLOWED_FIELDS) {
@@ -40,6 +41,32 @@ export async function PUT(
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+    }
+
+    // Snapshot current state before updating (versioning)
+    const { data: currentRecipe } = await supabase
+      .from('recipes')
+      .select('*')
+      .eq('id', recipeId)
+      .eq('user_id', user.id)
+      .single()
+
+    if (currentRecipe) {
+      const { data: lastVersion } = await supabase
+        .from('recipe_versions')
+        .select('version_number')
+        .eq('recipe_id', recipeId)
+        .order('version_number', { ascending: false })
+        .limit(1)
+        .single()
+
+      const nextVersion = (lastVersion?.version_number || 0) + 1
+      await supabase.from('recipe_versions').insert({
+        recipe_id: recipeId,
+        user_id: user.id,
+        version_number: nextVersion,
+        snapshot: currentRecipe,
+      })
     }
 
     const { data, error } = await supabase

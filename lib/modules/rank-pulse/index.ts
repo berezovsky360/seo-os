@@ -8,7 +8,7 @@
 
 import type { CoreEvent, EventType, ApiKeyType } from '@/lib/core/events'
 import type { SEOModule, ModuleAction, ModuleContext, ModuleSidebarConfig } from '@/lib/core/module-interface'
-import { createDataForSEOClient } from '@/lib/dataforseo/client'
+import { createLoggedDataForSEOClient } from '@/lib/dataforseo/logged-client'
 
 export class RankPulseModule implements SEOModule {
   id = 'rank-pulse' as const
@@ -110,7 +110,7 @@ export class RankPulseModule implements SEOModule {
     // 3. Build DataForSEO client
     const dfsKey = context.apiKeys['dataforseo']
     if (!dfsKey) throw new Error('DataForSEO API key not configured')
-    const client = createDataForSEOClient(dfsKey)
+    const client = createLoggedDataForSEOClient(dfsKey, context.supabase, context.userId)
 
     // 4. Group keywords by (language, location_code) and check
     const groups = new Map<string, typeof keywords>()
@@ -251,7 +251,7 @@ export class RankPulseModule implements SEOModule {
 
     const dfsKey = context.apiKeys['dataforseo']
     if (!dfsKey) throw new Error('DataForSEO API key not configured')
-    const client = createDataForSEOClient(dfsKey)
+    const client = createLoggedDataForSEOClient(dfsKey, context.supabase, context.userId)
 
     const results = await client.checkPositions([keyword], locationCode, languageCode)
     const serpResult = results.get(keyword)

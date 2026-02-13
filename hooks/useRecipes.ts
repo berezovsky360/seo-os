@@ -4,10 +4,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { coreService } from '@/lib/services/coreService'
 import type { Recipe } from '@/lib/core/events'
 
-export function useRecipes() {
+export function useRecipes(sortBy?: string) {
   return useQuery({
-    queryKey: ['recipes'],
-    queryFn: () => coreService.getRecipes(),
+    queryKey: ['recipes', sortBy],
+    queryFn: () => coreService.getRecipes(sortBy),
     staleTime: 5 * 60 * 1000,
   })
 }

@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import {
   BookOpen, Plus, ChevronLeft, Zap, ArrowRight, Trash2,
   ToggleLeft, ToggleRight, Loader2, Clock, Hash,
-  Store, Share2, FileJson, Settings
+  Store, Share2, FileJson, Settings, ArrowUpDown, History,
+  Copy, Archive, ArchiveRestore, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { useRecipes, useCreateRecipe, useUpdateRecipe, useDeleteRecipe } from '@/hooks/useRecipes';
 import { useToast } from '@/lib/contexts/ToastContext';
@@ -13,6 +14,7 @@ import RecipeFlowEditor from './RecipeFlowEditor';
 import RecipeMarketplace from './RecipeMarketplace';
 import ShareRecipeModal from './ShareRecipeModal';
 import ImportRecipeModal from './ImportRecipeModal';
+import RecipeVersionsModal from './RecipeVersionsModal';
 import { ALL_MODULES, MODULE_STYLES, RECIPE_MODULES_STORAGE_KEY } from './nodes/ActionNode';
 import type { Recipe } from '@/lib/core/events';
 
@@ -20,8 +22,16 @@ interface RecipeListProps {
   onBack?: () => void;
 }
 
+const SORT_OPTIONS = [
+  { value: 'updated', label: 'Last Updated' },
+  { value: 'created', label: 'Last Created' },
+  { value: 'name_asc', label: 'Name A-Z' },
+  { value: 'name_za', label: 'Name Z-A' },
+] as const;
+
 export default function RecipeList({ onBack }: RecipeListProps) {
-  const { data: recipes = [], isLoading } = useRecipes();
+  const [sortBy, setSortBy] = useState('updated');
+  const { data: recipes = [], isLoading } = useRecipes(sortBy);
   const createRecipe = useCreateRecipe();
   const updateRecipe = useUpdateRecipe();
   const deleteRecipe = useDeleteRecipe();
@@ -34,7 +44,8 @@ export default function RecipeList({ onBack }: RecipeListProps) {
   const [showMarketplace, setShowMarketplace] = useState(false);
   const [sharingRecipe, setSharingRecipe] = useState<Recipe | null>(null);
   const [showImport, setShowImport] = useState(false);
-  const [activeTab, setActiveTab] = useState<'recipes' | 'settings'>('recipes');
+  const [versionsRecipe, setVersionsRecipe] = useState<Recipe | null>(null);
+  const [activeTab, setActiveTab] = useState<'recipes' | 'archived' | 'settings'>('recipes');
   const [enabledModules, setEnabledModules] = useState<string[]>(() => {
     if (typeof window === 'undefined') return ALL_MODULES.map(m => m.id);
     try {
@@ -43,6 +54,15 @@ export default function RecipeList({ onBack }: RecipeListProps) {
     } catch {
       return ALL_MODULES.map(m => m.id);
     }
+  });
+  const [expandedModule, setExpandedModule] = useState<string | null>(null);
+  const DISABLED_ACTIONS_KEY = 'recipe-disabled-actions';
+  const [disabledActions, setDisabledActions] = useState<Record<string, string[]>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const stored = localStorage.getItem(DISABLED_ACTIONS_KEY);
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
   });
 
   const toggleModule = (moduleId: string) => {
@@ -59,6 +79,21 @@ export default function RecipeList({ onBack }: RecipeListProps) {
     const next = enabledModules.length === ALL_MODULES.length ? [] : ALL_MODULES.map(m => m.id);
     setEnabledModules(next);
     localStorage.setItem(RECIPE_MODULES_STORAGE_KEY, JSON.stringify(next));
+  };
+
+  const toggleAction = (moduleId: string, actionId: string) => {
+    setDisabledActions(prev => {
+      const disabled = prev[moduleId] || [];
+      const next = disabled.includes(actionId)
+        ? { ...prev, [moduleId]: disabled.filter(id => id !== actionId) }
+        : { ...prev, [moduleId]: [...disabled, actionId] };
+      localStorage.setItem(DISABLED_ACTIONS_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const isActionEnabled = (moduleId: string, actionId: string) => {
+    return !(disabledActions[moduleId] || []).includes(actionId);
   };
 
   const handleCreate = async (data: any) => {
@@ -106,6 +141,40 @@ export default function RecipeList({ onBack }: RecipeListProps) {
       setTogglingId(null);
     }
   };
+
+  const handleDuplicate = async (recipe: Recipe) => {
+    try {
+      await createRecipe.mutateAsync({
+        name: `${recipe.name} (Copy)`,
+        description: recipe.description || undefined,
+        trigger_event: recipe.trigger_event,
+        trigger_conditions: recipe.trigger_conditions,
+        actions: recipe.actions.map(a => ({ module: a.module, action: a.action, params: a.params || {} })),
+        site_ids: recipe.site_ids || undefined,
+      });
+      toast.success('Recipe duplicated');
+    } catch {
+      toast.error('Failed to duplicate recipe');
+    }
+  };
+
+  const handleArchive = async (recipe: Recipe) => {
+    const isArchived = !!(recipe as any).archived_at;
+    try {
+      await updateRecipe.mutateAsync({
+        recipeId: recipe.id,
+        updates: { archived_at: isArchived ? null : new Date().toISOString() } as any,
+      });
+      toast.success(isArchived ? 'Recipe restored' : 'Recipe archived');
+    } catch {
+      toast.error('Failed to archive recipe');
+    }
+  };
+
+  // Filter by archive status
+  const activeRecipes = (recipes as Recipe[]).filter(r => !(r as any).archived_at);
+  const archivedRecipes = (recipes as Recipe[]).filter(r => !!(r as any).archived_at);
+  const displayRecipes = activeTab === 'archived' ? archivedRecipes : activeRecipes;
 
   const startFlowEdit = (recipe: Recipe | null) => {
     setEditingRecipe(recipe);
@@ -195,8 +264,17 @@ export default function RecipeList({ onBack }: RecipeListProps) {
               onClick={() => setActiveTab('recipes')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeTab === 'recipes' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
             >
-              Recipes ({recipes.length})
+              Recipes ({activeRecipes.length})
             </button>
+            {archivedRecipes.length > 0 && (
+              <button
+                onClick={() => setActiveTab('archived')}
+                className={`flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeTab === 'archived' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <Archive size={11} />
+                Archived ({archivedRecipes.length})
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('settings')}
               className={`flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeTab === 'settings' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
@@ -205,6 +283,21 @@ export default function RecipeList({ onBack }: RecipeListProps) {
               Modules
             </button>
           </div>
+
+          {(activeTab === 'recipes' || activeTab === 'archived') && (
+            <div className="flex items-center gap-1.5 ml-2">
+              <ArrowUpDown size={12} className="text-gray-400" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="text-xs font-semibold text-gray-600 bg-transparent border-none outline-none cursor-pointer hover:text-gray-900"
+              >
+                {SORT_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -253,32 +346,69 @@ export default function RecipeList({ onBack }: RecipeListProps) {
             <div className="space-y-2">
               {ALL_MODULES.map(mod => {
                 const isEnabled = enabledModules.includes(mod.id);
+                const isExpanded = expandedModule === mod.id;
                 const style = MODULE_STYLES[mod.id];
                 const IconComponent = style?.icon;
+                const disabledCount = (disabledActions[mod.id] || []).length;
+                const activeActionCount = mod.actions.length - disabledCount;
                 return (
-                  <div
-                    key={mod.id}
-                    onClick={() => toggleModule(mod.id)}
-                    className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${
-                      isEnabled
-                        ? 'bg-white border-gray-200 shadow-sm hover:shadow-md'
-                        : 'bg-gray-50 border-gray-100 opacity-60 hover:opacity-80'
-                    }`}
-                  >
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${style?.iconBg || 'bg-gray-100'}`}>
-                      {IconComponent && <IconComponent size={18} className={style?.iconColor || 'text-gray-500'} />}
+                  <div key={mod.id} className={`rounded-xl border transition-all ${
+                    isEnabled
+                      ? 'bg-white border-gray-200 shadow-sm'
+                      : 'bg-gray-50 border-gray-100 opacity-60'
+                  }`}>
+                    <div className="flex items-center gap-4 p-4 cursor-pointer" onClick={() => toggleModule(mod.id)}>
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${style?.iconBg || 'bg-gray-100'}`}>
+                        {IconComponent && <IconComponent size={18} className={style?.iconColor || 'text-gray-500'} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">{mod.label}</p>
+                        {mod.description && <p className="text-xs text-gray-400 mt-0.5">{mod.description}</p>}
+                        <p className="text-[11px] text-gray-300 mt-0.5">{activeActionCount}/{mod.actions.length} actions active</p>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setExpandedModule(isExpanded ? null : mod.id); }}
+                        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="Show actions"
+                      >
+                        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </button>
+                      <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => toggleModule(mod.id)}>
+                          {isEnabled ? (
+                            <ToggleRight size={24} className="text-indigo-600" />
+                          ) : (
+                            <ToggleLeft size={24} className="text-gray-300" />
+                          )}
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-900">{mod.label}</p>
-                      <p className="text-xs text-gray-400">{mod.actions.length} actions</p>
-                    </div>
-                    <div className="flex-shrink-0">
-                      {isEnabled ? (
-                        <ToggleRight size={24} className="text-indigo-600" />
-                      ) : (
-                        <ToggleLeft size={24} className="text-gray-300" />
-                      )}
-                    </div>
+                    {isExpanded && isEnabled && (
+                      <div className="border-t border-gray-100 px-4 pb-3 pt-2 ml-14 space-y-1">
+                        {mod.actions.map(action => {
+                          const actionEnabled = isActionEnabled(mod.id, action.id);
+                          return (
+                            <div
+                              key={action.id}
+                              onClick={() => toggleAction(mod.id, action.id)}
+                              className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+                                actionEnabled ? 'hover:bg-gray-50' : 'opacity-50 hover:opacity-70'
+                              }`}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium text-gray-800">{action.label}</p>
+                                {action.description && <p className="text-[11px] text-gray-400">{action.description}</p>}
+                              </div>
+                              {actionEnabled ? (
+                                <ToggleRight size={18} className="text-indigo-500 flex-shrink-0" />
+                              ) : (
+                                <ToggleLeft size={18} className="text-gray-300 flex-shrink-0" />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -288,7 +418,7 @@ export default function RecipeList({ onBack }: RecipeListProps) {
           <div className="flex items-center justify-center py-20">
             <Loader2 size={32} className="animate-spin text-gray-300" />
           </div>
-        ) : recipes.length === 0 ? (
+        ) : displayRecipes.length === 0 ? (
           <div className="text-center py-16">
             <BookOpen size={48} className="text-gray-200 mx-auto mb-4" />
             <h3 className="text-gray-500 font-medium mb-1">No recipes yet</h3>
@@ -315,7 +445,7 @@ export default function RecipeList({ onBack }: RecipeListProps) {
           </div>
         ) : (
           <div className="space-y-4">
-            {(recipes as Recipe[]).map((recipe) => (
+            {displayRecipes.map((recipe) => (
               <div
                 key={recipe.id}
                 className={`bg-white rounded-xl border transition-all ${
@@ -381,6 +511,13 @@ export default function RecipeList({ onBack }: RecipeListProps) {
                     {/* Actions */}
                     <div className="flex items-center gap-1.5 ml-4">
                       <button
+                        onClick={() => setVersionsRecipe(recipe)}
+                        className="p-1.5 text-gray-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+                        title="Version history"
+                      >
+                        <History size={14} />
+                      </button>
+                      <button
                         onClick={() => setSharingRecipe(recipe)}
                         className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                         title="Share recipe"
@@ -400,6 +537,20 @@ export default function RecipeList({ onBack }: RecipeListProps) {
                         ) : (
                           <ToggleLeft size={24} />
                         )}
+                      </button>
+                      <button
+                        onClick={() => handleDuplicate(recipe)}
+                        className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                        title="Duplicate recipe"
+                      >
+                        <Copy size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleArchive(recipe)}
+                        className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                        title={(recipe as any).archived_at ? 'Restore from archive' : 'Archive recipe'}
+                      >
+                        {(recipe as any).archived_at ? <ArchiveRestore size={14} /> : <Archive size={14} />}
                       </button>
                       <button
                         onClick={() => handleDelete(recipe.id)}
@@ -433,6 +584,14 @@ export default function RecipeList({ onBack }: RecipeListProps) {
       {showImport && (
         <ImportRecipeModal
           onClose={() => setShowImport(false)}
+        />
+      )}
+      {versionsRecipe && (
+        <RecipeVersionsModal
+          recipeId={versionsRecipe.id}
+          recipeName={versionsRecipe.name}
+          onClose={() => setVersionsRecipe(null)}
+          onRestored={() => setVersionsRecipe(null)}
         />
       )}
     </div>

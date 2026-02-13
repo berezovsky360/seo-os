@@ -5,11 +5,13 @@ import type { PlatformAdapter, PlatformId, PlatformInfo } from './types'
 import { WordPressAdapter } from './wordpress'
 import { ShopifyAdapter } from './shopify'
 import { WebflowAdapter } from './webflow'
+import { AntigravityAdapter } from './antigravity'
 
 const ADAPTERS: Record<PlatformId, () => PlatformAdapter> = {
   wordpress: () => new WordPressAdapter(),
   shopify: () => new ShopifyAdapter(),
   webflow: () => new WebflowAdapter(),
+  antigravity: () => new AntigravityAdapter(),
 }
 
 export function getAdapter(platformId: PlatformId): PlatformAdapter {
@@ -57,6 +59,17 @@ export function getAvailablePlatforms(): PlatformInfo[] {
       requiredCredentials: [
         { key: 'site_id', label: 'Site ID', type: 'text' },
         { key: 'api_token', label: 'API Token', type: 'password' },
+      ],
+    },
+    {
+      id: 'antigravity',
+      name: 'Antigravity Engine',
+      icon: 'Rocket',
+      available: true,
+      description: 'Built-in static site builder — zero JS, 100/100 PageSpeed',
+      capabilities: new AntigravityAdapter().capabilities,
+      requiredCredentials: [
+        { key: 'landing_site_id', label: 'Landing Site ID', type: 'text' },
       ],
     },
   ]

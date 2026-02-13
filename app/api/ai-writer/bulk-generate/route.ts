@@ -5,6 +5,7 @@ import { decrypt, getEncryptionKey } from '@/lib/utils/encryption'
 import { coreDispatcher } from '@/lib/core/dispatcher'
 import { AIWriterModule } from '@/lib/modules/ai-writer'
 import { calculateCost, DEFAULT_MODEL } from '@/lib/modules/ai-writer/pricing'
+import { checkBudget } from '@/lib/utils/usage-budget'
 import { createBackgroundTask, startTask, updateTaskProgress, completeTask, failTask } from '@/lib/utils/background-tasks'
 import type { ModuleContext } from '@/lib/core/module-interface'
 import type { CoreEvent } from '@/lib/core/events'
@@ -92,6 +93,13 @@ export async function POST(request: NextRequest) {
         const results: { id: string; value: string }[] = []
 
         for (let i = 0; i < items.length; i++) {
+          // Budget check per iteration — stop early if exceeded
+          const budgetCheck = await checkBudget(serviceClient, userId, 'gemini')
+          if (!budgetCheck.allowed) {
+            failCount += items.length - i
+            break
+          }
+
           const item = items[i]
           try {
             const result = await module.executeAction(actionName, {
@@ -128,6 +136,7 @@ export async function POST(request: NextRequest) {
               )
               await serviceClient.from('ai_usage_log').insert({
                 user_id: userId,
+                service: 'gemini',
                 action: `bulk_${actionName}`,
                 model: result.usage.model,
                 prompt_tokens: result.usage.prompt_tokens,

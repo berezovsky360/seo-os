@@ -5,6 +5,7 @@ import { decrypt, getEncryptionKey } from '@/lib/utils/encryption'
 import { coreDispatcher } from '@/lib/core/dispatcher'
 import { AIWriterModule } from '@/lib/modules/ai-writer'
 import { calculateCost, DEFAULT_MODEL } from '@/lib/modules/ai-writer/pricing'
+import { checkBudget } from '@/lib/utils/usage-budget'
 import type { ModuleContext } from '@/lib/core/module-interface'
 import type { CoreEvent } from '@/lib/core/events'
 
@@ -56,6 +57,12 @@ export async function POST(request: NextRequest) {
       settings: { ...moduleConfig?.settings, model },
     }
 
+    // Budget check before expensive call
+    const budgetCheck = await checkBudget(serviceClient, user.id, 'gemini')
+    if (!budgetCheck.allowed) {
+      return NextResponse.json({ error: 'Monthly budget exceeded', budget_warning: budgetCheck }, { status: 429 })
+    }
+
     const module = new AIWriterModule()
     const result = await module.executeAction('generate_title', { post_id, site_id, persona_id, keyword, tone }, context)
 
@@ -68,6 +75,7 @@ export async function POST(request: NextRequest) {
       )
       await serviceClient.from('ai_usage_log').insert({
         user_id: user.id,
+        service: 'gemini',
         action: 'generate_title',
         model: result.usage.model,
         prompt_tokens: result.usage.prompt_tokens,
@@ -77,6 +85,11 @@ export async function POST(request: NextRequest) {
         metadata: { post_id, site_id, keyword, tone },
       })
       result.estimated_cost = estimated_cost
+    }
+
+    // Attach budget warning if approaching limit
+    if (budgetCheck.percentage >= 80) {
+      result.budget_warning = { percentage: budgetCheck.percentage, currentSpend: budgetCheck.currentSpend, limit: budgetCheck.limit }
     }
 
     return NextResponse.json(result)

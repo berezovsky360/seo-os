@@ -29,6 +29,8 @@ export type ModuleId =
   | 'any-chat'
   | 'competitor-analysis'
   | 'competitor-anatomy'
+  | 'lead-factory'
+  | 'conversion-lab'
 
 // ====== API Key Types ======
 
@@ -148,6 +150,14 @@ export type EventType =
   | 'anatomy.crawl_failed'
   | 'anatomy.instant_audit_completed'
   | 'anatomy.issues_found'
+  // Lead Factory events
+  | 'lead.captured'
+  | 'lead.magnet_delivered'
+  | 'lead.form_submitted'
+  // Conversion Lab events
+  | 'lab.lead_moved'
+  | 'lab.offer_sent'
+  | 'lab.popup_triggered'
 
 // ====== Background Task Types ======
 

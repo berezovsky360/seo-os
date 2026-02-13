@@ -7,15 +7,17 @@ import {
   PlusCircle, FileText, CheckCircle, Sparkles, Activity, AlertCircle, Search,
   TrendingUp, Settings, ExternalLink, Calendar, Wifi, WifiOff,
   RefreshCw, Loader2, Globe, BarChart3, Image as ImageIcon, BookOpen, Users, Bot,
-  Database, Wand2, Timer, Rss, Send, Palette, Swords, GripVertical, Microscope
+  Database, Wand2, Timer, Rss, Send, Palette, Swords, GripVertical, Microscope, Rocket
 } from 'lucide-react';
 import { THEMES, THEME_COLORS } from '../constants';
 import AddSiteModal from './AddSiteModal';
+import DeploymentTeaser from './DeploymentTeaser';
 import { useAllStats } from '@/hooks/useStats';
 import { useUpdateSite } from '@/hooks/useSites';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/lib/contexts/ToastContext';
 import { useCore } from '@/lib/contexts/CoreContext';
+import { recordModuleVisit, getModuleVisitCounts } from '@/lib/utils/module-visits';
 import type { ModuleId } from '@/lib/core/events';
 import { useRankPulseSummary } from '@/hooks/useRankPulse';
 
@@ -99,6 +101,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
   const canAddProperty = !userProfile || userRole !== 'user';
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddSiteModalOpen, setIsAddSiteModalOpen] = useState(false);
+  const [showDeployTeaser, setShowDeployTeaser] = useState(false);
   const [syncingSiteId, setSyncingSiteId] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState<'all' | 'connected' | 'not-connected'>('all');
   const [themePickerSiteId, setThemePickerSiteId] = useState<string | null>(null);
@@ -169,11 +172,15 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
     return () => document.removeEventListener('mousedown', handleClick);
   }, [themePickerSiteId]);
 
-  // Enabled modules for Quick Access
+  // Enabled modules for Quick Access, sorted by visit frequency
   const { enabledModules } = useCore();
-  const activeModules = enabledModules.size > 0
-    ? MODULE_NAV.filter(m => enabledModules.has(m.id))
-    : MODULE_NAV;
+  const activeModules = React.useMemo(() => {
+    const base = enabledModules.size > 0
+      ? MODULE_NAV.filter(m => enabledModules.has(m.id))
+      : MODULE_NAV;
+    const counts = getModuleVisitCounts();
+    return [...base].sort((a, b) => (counts[b.id] || 0) - (counts[a.id] || 0));
+  }, [enabledModules]);
 
   // Fetch real statistics for all sites
   const { data: statsMap = {} } = useAllStats();
@@ -288,20 +295,25 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
           </div>
       </div>
 
-      {/* Project Filter Tabs */}
-      <div className="flex items-center gap-4 mb-6 px-1">
+      {/* Project Filter Tabs — responsive: pills on mobile, tabs on desktop */}
+      <div className="flex items-center gap-2 md:gap-4 mb-6 px-1 overflow-x-auto scrollbar-none">
         {([
           { key: 'all' as const, label: 'All Projects', count: ownSites.length },
           { key: 'connected' as const, label: 'Connected', count: connectedSites.length },
           { key: 'not-connected' as const, label: 'Not Connected', count: notConnectedSites.length },
         ]).map((tab, i) => (
           <React.Fragment key={tab.key}>
-            {i > 0 && <div className="w-px h-6 bg-gray-200" />}
+            {i > 0 && <div className="hidden md:block w-px h-6 bg-gray-200 flex-shrink-0" />}
             <button
               onClick={() => setProjectFilter(tab.key)}
-              className={`text-xl font-bold tracking-tight transition-colors ${
-                projectFilter === tab.key ? 'text-gray-900' : 'text-gray-300 hover:text-gray-500'
-              }`}
+              className={`whitespace-nowrap flex-shrink-0 transition-colors
+                text-sm md:text-xl font-bold tracking-tight
+                md:bg-transparent md:px-0 md:py-0 md:rounded-none
+                px-3 py-1.5 rounded-full
+                ${projectFilter === tab.key
+                  ? 'text-gray-900 bg-gray-100 md:bg-transparent'
+                  : 'text-gray-300 hover:text-gray-500 bg-transparent'
+                }`}
             >
               {tab.label} ({tab.count})
             </button>
@@ -541,6 +553,21 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
                 <p className="text-sm text-gray-400 mt-2 max-w-[200px] text-center">Connect a new domain to start tracking and generating content.</p>
             </button>
         )}
+
+        {/* Deploy New Site (Coming Soon) */}
+        {!isLoading && (
+            <button
+              onClick={() => setShowDeployTeaser(true)}
+              className="group relative rounded-[2rem] border-2 border-dashed border-indigo-200 bg-indigo-50/30 hover:bg-white hover:border-indigo-400 hover:shadow-xl transition-all duration-300 flex flex-col items-center justify-center h-[280px] cursor-pointer"
+            >
+                <span className="absolute top-4 right-4 px-2 py-0.5 bg-indigo-100 text-indigo-600 text-[10px] font-bold rounded-full">COMING SOON</span>
+                <div className="w-16 h-16 rounded-3xl bg-white shadow-sm border border-indigo-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 group-hover:shadow-md">
+                    <Rocket size={32} className="text-indigo-300 group-hover:text-indigo-500 transition-colors" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 group-hover:text-indigo-600 transition-colors">Deploy New Site</h3>
+                <p className="text-sm text-gray-400 mt-2 max-w-[200px] text-center">Launch WordPress or custom SEO CMS sites from SEO OS.</p>
+            </button>
+        )}
       </div>
 
       {/* Rank Pulse Summary */}
@@ -620,21 +647,21 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
         </div>
       )}
 
-      {/* Quick Access — activated modules */}
+      {/* Quick Access — activated modules, sorted by visit frequency */}
       {activeModules.length > 0 && (
         <div className="mt-10">
           <h2 className="text-xl font-bold text-gray-900 mb-4 px-1 tracking-tight">Quick Access</h2>
-          <div className="flex flex-wrap gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
             {activeModules.map(mod => (
               <button
                 key={mod.id}
-                onClick={() => router.push(getRouteForView(mod.viewState))}
-                className="flex items-center gap-2.5 px-4 py-3 bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all group"
+                onClick={() => { recordModuleVisit(mod.id); router.push(getRouteForView(mod.viewState)); }}
+                className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all group"
               >
-                <div className={`w-8 h-8 rounded-xl ${mod.iconBg} flex items-center justify-center`}>
+                <div className={`w-6 h-6 rounded-lg ${mod.iconBg} flex items-center justify-center flex-shrink-0`}>
                   {mod.icon}
                 </div>
-                <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900">{mod.name}</span>
+                <span className="text-xs font-semibold text-gray-700 group-hover:text-gray-900 truncate">{mod.name}</span>
               </button>
             ))}
           </div>
@@ -646,6 +673,11 @@ const Dashboard: React.FC<DashboardProps> = ({ sites, isLoading, error, onGenera
         isOpen={isAddSiteModalOpen}
         onClose={() => setIsAddSiteModalOpen(false)}
       />
+
+      {/* Deployment Teaser Modal */}
+      {showDeployTeaser && (
+        <DeploymentTeaser onClose={() => setShowDeployTeaser(false)} />
+      )}
     </div>
   );
 };

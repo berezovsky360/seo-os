@@ -15,7 +15,8 @@
 
 import type { CoreEvent, EventType, ApiKeyType } from '@/lib/core/events'
 import type { SEOModule, ModuleAction, ModuleContext, ModuleSidebarConfig } from '@/lib/core/module-interface'
-import { createDataForSEOClient, estimateLabsCost } from '@/lib/dataforseo/client'
+import { estimateLabsCost } from '@/lib/dataforseo/client'
+import { createLoggedDataForSEOClient } from '@/lib/dataforseo/logged-client'
 
 export class CompetitorAnalysisModule implements SEOModule {
   id = 'competitor-analysis' as const
@@ -163,7 +164,7 @@ export class CompetitorAnalysisModule implements SEOModule {
   private getClient(context: ModuleContext) {
     const dfsKey = context.apiKeys['dataforseo']
     if (!dfsKey) throw new Error('DataForSEO API key not configured')
-    return createDataForSEOClient(dfsKey)
+    return createLoggedDataForSEOClient(dfsKey, context.supabase, context.userId)
   }
 
   private async getCompetitor(competitorId: string, context: ModuleContext) {

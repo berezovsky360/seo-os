@@ -1,0 +1,31 @@
+{
+  "heading_rules": {
+    "max_h1": 1,
+    "require_h1_in_article": true,
+    "no_skip_levels": true
+  },
+  "meta_rules": {
+    "title_max_length": 60,
+    "description_max_length": 160,
+    "require_canonical": true,
+    "require_og_image": true
+  },
+  "content_rules": {
+    "min_word_count": 300,
+    "require_internal_links": false,
+    "min_internal_links": 2,
+    "require_alt_on_images": true,
+    "lazy_load_below_fold": true
+  },
+  "schema_rules": {
+    "require_article_schema": true,
+    "require_breadcrumb_schema": true,
+    "require_org_schema": false
+  },
+  "performance_rules": {
+    "max_critical_css_bytes": 14000,
+    "zero_js": true,
+    "require_width_height_on_images": true,
+    "require_fetchpriority_on_lcp": true
+  }
+}

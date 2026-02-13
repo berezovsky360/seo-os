@@ -3,11 +3,13 @@
 import React, { useState } from 'react';
 import {
   Key, Plus, Trash2, CheckCircle2, XCircle, Loader2,
-  ChevronLeft, Eye, EyeOff, RefreshCw, AlertTriangle, Shield
+  ChevronLeft, Eye, EyeOff, RefreshCw, AlertTriangle, Shield, BarChart3
 } from 'lucide-react';
 import { useApiKeys, useSaveApiKey, useDeleteApiKey, useValidateApiKey } from '@/hooks/useApiKeys';
 import { useToast } from '@/lib/contexts/ToastContext';
+import { useUsageStats } from '@/hooks/useUsageDashboard';
 import type { ApiKeyType } from '@/lib/core/events';
+import UsageDashboard from './UsageDashboard';
 
 // Key type metadata
 const KEY_TYPES: {
@@ -47,6 +49,8 @@ interface KeyManagementProps {
   onBack?: () => void;
 }
 
+type TabId = 'keys' | 'usage';
+
 export default function KeyManagement({ onBack }: KeyManagementProps) {
   const { data: apiKeys = [], isLoading } = useApiKeys();
   const saveKey = useSaveApiKey();
@@ -54,11 +58,16 @@ export default function KeyManagement({ onBack }: KeyManagementProps) {
   const validateKey = useValidateApiKey();
   const toast = useToast();
 
+  const [activeTab, setActiveTab] = useState<TabId>('keys');
   const [addingKey, setAddingKey] = useState<ApiKeyType | null>(null);
   const [keyValue, setKeyValue] = useState('');
   const [keyLabel, setKeyLabel] = useState('');
   const [showValue, setShowValue] = useState(false);
   const [validatingType, setValidatingType] = useState<string | null>(null);
+
+  // Check budget status for badge indicator
+  const { data: usageData } = useUsageStats('30d', 'all');
+  const hasBudgetWarning = usageData?.budget_status?.some(b => b.percentage >= 80) ?? false;
 
   const getKeyInfo = (keyType: ApiKeyType) => {
     return apiKeys.find(k => k.key_type === keyType);
@@ -112,27 +121,60 @@ export default function KeyManagement({ onBack }: KeyManagementProps) {
   return (
     <div className="h-full overflow-y-auto">
       {/* Header */}
-      <div className="flex justify-between items-center px-8 py-5 bg-[#F5F5F7] border-b border-gray-200 sticky top-0 z-10">
-        <div className="flex items-center gap-4">
-          {onBack && (
-            <>
-              <button
-                onClick={onBack}
-                className="flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm"
-              >
-                <ChevronLeft size={16} />
-                Back
-              </button>
-              <div className="h-4 w-px bg-gray-300" />
-            </>
-          )}
-          <div className="flex items-center gap-2">
-            <Shield size={20} className="text-gray-900" />
-            <h1 className="text-lg font-bold text-gray-900">API Keys</h1>
+      <div className="bg-[#F5F5F7] border-b border-gray-200 sticky top-0 z-10">
+        <div className="flex justify-between items-center px-8 py-5">
+          <div className="flex items-center gap-4">
+            {onBack && (
+              <>
+                <button
+                  onClick={onBack}
+                  className="flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm"
+                >
+                  <ChevronLeft size={16} />
+                  Back
+                </button>
+                <div className="h-4 w-px bg-gray-300" />
+              </>
+            )}
+            <div className="flex items-center gap-2">
+              <Shield size={20} className="text-gray-900" />
+              <h1 className="text-lg font-bold text-gray-900">API & Usage</h1>
+            </div>
           </div>
+        </div>
+        {/* Tabs */}
+        <div className="flex gap-1 px-8 -mb-px">
+          <button
+            onClick={() => setActiveTab('keys')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+              activeTab === 'keys'
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Key size={15} />
+            Keys
+          </button>
+          <button
+            onClick={() => setActiveTab('usage')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+              activeTab === 'usage'
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <BarChart3 size={15} />
+            Usage
+            {hasBudgetWarning && (
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            )}
+          </button>
         </div>
       </div>
 
+      {activeTab === 'usage' ? (
+        <UsageDashboard />
+      ) : (
       <div className="p-8 max-w-3xl">
         {/* Info Banner */}
         <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl p-4 mb-8">
@@ -296,6 +338,7 @@ export default function KeyManagement({ onBack }: KeyManagementProps) {
           })}
         </div>
       </div>
+      )}
     </div>
   );
 }

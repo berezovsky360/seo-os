@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react'
 import {
   X, Copy, Check, Share2, Upload, Link2, Globe,
-  Loader2
+  Loader2, Download
 } from 'lucide-react'
 import { usePublishTemplate } from '@/hooks/useMarketplaceTemplates'
 import { useToast } from '@/lib/contexts/ToastContext'
@@ -19,6 +19,8 @@ const CATEGORIES = ['general', 'content', 'seo', 'monitoring', 'automation']
 export default function ShareRecipeModal({ recipe, onClose }: ShareRecipeModalProps) {
   const [tab, setTab] = useState<'json' | 'publish' | 'link'>('json')
   const [copied, setCopied] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const [publishedSlug, setPublishedSlug] = useState<string | null>(null)
   const toast = useToast()
   const publishTemplate = usePublishTemplate()
 
@@ -51,10 +53,21 @@ export default function ShareRecipeModal({ recipe, onClose }: ShareRecipeModalPr
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const handleDownload = () => {
+    const blob = new Blob([exportJson], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${recipe.name.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success('Recipe downloaded')
+  }
+
   const handlePublish = async () => {
     const modules = [...new Set(recipe.actions.map(a => a.module))]
     try {
-      await publishTemplate.mutateAsync({
+      const result = await publishTemplate.mutateAsync({
         name: pubName,
         description: pubDesc || undefined,
         category: pubCategory,
@@ -65,11 +78,27 @@ export default function ShareRecipeModal({ recipe, onClose }: ShareRecipeModalPr
         graph_layout: recipe.graph_layout || undefined,
         required_modules: modules,
       })
+      const slug = result?.template?.slug
+      if (slug) {
+        setPublishedSlug(slug)
+        setTab('link')
+      }
       toast.success('Recipe published to marketplace!')
-      onClose()
     } catch (err: any) {
       toast.error(err.message || 'Failed to publish')
     }
+  }
+
+  const publicUrl = publishedSlug
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/recipes/public/${publishedSlug}`
+    : null
+
+  const handleCopyLink = async () => {
+    if (!publicUrl) return
+    await navigator.clipboard.writeText(publicUrl)
+    setLinkCopied(true)
+    toast.success('Link copied to clipboard')
+    setTimeout(() => setLinkCopied(false), 2000)
   }
 
   const tabs = [
@@ -128,6 +157,13 @@ export default function ShareRecipeModal({ recipe, onClose }: ShareRecipeModalPr
                   {copied ? 'Copied!' : 'Copy'}
                 </button>
               </div>
+              <button
+                onClick={handleDownload}
+                className="mt-3 w-full flex items-center justify-center gap-2 py-2 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                <Download size={12} />
+                Download .json
+              </button>
             </div>
           )}
 
@@ -193,22 +229,50 @@ export default function ShareRecipeModal({ recipe, onClose }: ShareRecipeModalPr
 
           {tab === 'link' && (
             <div>
-              <p className="text-xs text-gray-500 mb-3">
-                Publish this recipe first, then share the marketplace link with others.
-              </p>
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
-                <Link2 size={24} className="text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-500 mb-3">
-                  Publish your recipe to the marketplace to get a shareable link.
-                </p>
-                <button
-                  onClick={() => setTab('publish')}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-colors"
-                >
-                  <Upload size={12} />
-                  Go to Publish
-                </button>
-              </div>
+              {publicUrl ? (
+                <>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Your recipe is published! Share this link with others.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      readOnly
+                      value={publicUrl}
+                      className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 outline-none font-mono"
+                      onClick={(e) => (e.target as HTMLInputElement).select()}
+                    />
+                    <button
+                      onClick={handleCopyLink}
+                      className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors"
+                    >
+                      {linkCopied ? <Check size={14} /> : <Copy size={14} />}
+                      {linkCopied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-2">
+                    Anyone with this link can view and import your recipe.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Publish this recipe first, then share the marketplace link with others.
+                  </p>
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
+                    <Link2 size={24} className="text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500 mb-3">
+                      Publish your recipe to the marketplace to get a shareable link.
+                    </p>
+                    <button
+                      onClick={() => setTab('publish')}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-colors"
+                    >
+                      <Upload size={12} />
+                      Go to Publish
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

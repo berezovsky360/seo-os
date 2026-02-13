@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { decrypt, getEncryptionKey } from '@/lib/utils/encryption'
 import { calculateCost, DEFAULT_MODEL } from '@/lib/modules/ai-writer/pricing'
+import { checkBudget } from '@/lib/utils/usage-budget'
 
 const ACTION_PROMPTS: Record<string, string> = {
   improve:
@@ -74,6 +75,12 @@ export async function POST(request: NextRequest) {
 
     const model = requestModel || moduleConfig?.settings?.model || DEFAULT_MODEL
 
+    // Budget check before expensive call
+    const budgetCheck = await checkBudget(serviceClient, user.id, 'gemini')
+    if (!budgetCheck.allowed) {
+      return NextResponse.json({ error: 'Monthly budget exceeded', budget_warning: budgetCheck }, { status: 429 })
+    }
+
     const { GoogleGenAI } = await import('@google/genai')
     const ai = new GoogleGenAI({ apiKey: decryptedKey })
 
@@ -98,6 +105,7 @@ ${text}`
       estimated_cost = calculateCost(model, promptTokens, outputTokens)
       await serviceClient.from('ai_usage_log').insert({
         user_id: user.id,
+        service: 'gemini',
         action: `rewrite_${action}`,
         model,
         prompt_tokens: promptTokens,
@@ -108,7 +116,7 @@ ${text}`
       })
     }
 
-    return NextResponse.json({
+    const response_body: Record<string, any> = {
       result,
       usage: usage ? {
         model,
@@ -117,7 +125,13 @@ ${text}`
         total_tokens: usage.totalTokenCount || 0,
       } : null,
       estimated_cost,
-    })
+    }
+
+    if (budgetCheck.percentage >= 80) {
+      response_body.budget_warning = { percentage: budgetCheck.percentage, currentSpend: budgetCheck.currentSpend, limit: budgetCheck.limit }
+    }
+
+    return NextResponse.json(response_body)
   } catch (error) {
     console.error('[API] ai-writer/rewrite error:', error)
     return NextResponse.json(

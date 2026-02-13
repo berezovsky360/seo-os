@@ -159,6 +159,15 @@ export class ContentEngineModule implements SEOModule {
       ],
     },
     {
+      id: 'publish_to_landing',
+      name: 'Publish to Landing Engine',
+      description: 'Save article to Antigravity landing site and trigger static build',
+      params: [
+        { name: 'run_id', type: 'string', label: 'Pipeline Run ID', required: true },
+        { name: 'landing_site_id', type: 'string', label: 'Landing Site ID', required: true },
+      ],
+    },
+    {
       id: 'run_full_pipeline',
       name: 'Run Full Pipeline',
       description: 'End-to-end: poll feeds, score, extract, generate, publish',
@@ -207,6 +216,7 @@ export class ContentEngineModule implements SEOModule {
       case 'assemble_article': return this.assembleArticleAction(params, context)
       case 'generate_image': return this.generateImageAction(params, context)
       case 'publish_to_wp': return this.publishToWP(params, context)
+      case 'publish_to_landing': return this.publishToLanding(params, context)
       case 'run_full_pipeline': return this.runFullPipeline(params, context)
       default:
         throw new Error(`Unknown action: ${actionId}`)
@@ -840,6 +850,84 @@ export class ContentEngineModule implements SEOModule {
     })
 
     return { run_id, wp_post_id: wp.id, wp_post_url: wp.link }
+  }
+
+  private async publishToLanding(
+    params: Record<string, any>,
+    context: ModuleContext
+  ): Promise<Record<string, any>> {
+    const { run_id, landing_site_id } = params
+    if (!run_id || !landing_site_id) throw new Error('run_id and landing_site_id required')
+
+    const { data: run } = await context.supabase
+      .from('content_pipeline_runs')
+      .select('*')
+      .eq('id', run_id)
+      .single()
+
+    if (!run) throw new Error('Pipeline run not found')
+    if (!run.assembled_html) throw new Error('Article not assembled yet')
+
+    // Verify landing site exists
+    const { data: site } = await context.supabase
+      .from('landing_sites')
+      .select('id, name')
+      .eq('id', landing_site_id)
+      .single()
+
+    if (!site) throw new Error('Landing site not found')
+
+    const title = run.title || 'Generated Article'
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    const content = run.assembled_html
+    const wordCount = content.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length
+    const readingTime = Math.max(1, Math.ceil(wordCount / 200))
+
+    // Create landing page
+    const { data: page, error: pageErr } = await context.supabase
+      .from('landing_pages')
+      .insert({
+        landing_site_id,
+        slug,
+        page_type: 'post',
+        title,
+        seo_title: run.seo_title || title,
+        seo_description: run.seo_description || '',
+        content,
+        is_published: true,
+        published_at: new Date().toISOString(),
+        word_count: wordCount,
+        reading_time: readingTime,
+      })
+      .select()
+      .single()
+
+    if (pageErr) throw new Error(`Failed to create landing page: ${pageErr.message}`)
+
+    // Update pipeline run
+    await context.supabase
+      .from('content_pipeline_runs')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', run_id)
+
+    // Mark source items as used
+    if (run.source_item_ids?.length) {
+      await context.supabase
+        .from('content_items')
+        .update({ status: 'used' })
+        .in('id', run.source_item_ids)
+    }
+
+    await context.emitEvent({
+      event_type: 'engine.article_published',
+      source_module: 'content-engine',
+      payload: { run_id, landing_site_id, landing_page_id: page.id, title },
+    })
+
+    return { run_id, landing_site_id, landing_page_id: page.id, slug: page.slug }
   }
 
   private async runFullPipeline(

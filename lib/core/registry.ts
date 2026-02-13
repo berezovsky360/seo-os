@@ -29,6 +29,8 @@ import { TelegraphModule } from '@/lib/modules/telegraph'
 import { CompetitorAnalysisModule } from '@/lib/modules/competitor-analysis'
 import { CompetitorAnatomyModule } from '@/lib/modules/competitor-anatomy'
 import { AnyChatModule } from '@/lib/modules/any-chat'
+import { LeadFactoryModule } from '@/lib/modules/lead-factory'
+import { ConversionLabModule } from '@/lib/modules/conversion-lab'
 
 export const MODULE_REGISTRY: Record<string, SEOModule> = {
   'rankmath-bridge': new RankMathBridgeModule(),
@@ -50,6 +52,9 @@ export const MODULE_REGISTRY: Record<string, SEOModule> = {
   'competitor-analysis': new CompetitorAnalysisModule(),
   'competitor-anatomy': new CompetitorAnatomyModule(),
   'any-chat': new AnyChatModule(),
+  // Growth modules
+  'lead-factory': new LeadFactoryModule(),
+  'conversion-lab': new ConversionLabModule(),
 }
 
 /**

@@ -1,0 +1,34 @@
+// Clean Blog — Partials (header, footer, breadcrumbs)
+
+export const headerPartial = `<header role="banner">
+<nav aria-label="Main navigation">
+<a href="/" class="logo">{{site_name}}</a>
+<ul>
+{{#each nav_links}}<li><a href="{{url}}"{{#if current}} aria-current="page"{{/if}}>{{label}}</a></li>
+{{/each}}</ul>
+</nav>
+</header>`
+
+export const footerPartial = `<footer role="contentinfo">
+<p>&copy; {{year}} {{site_name}}</p>
+</footer>`
+
+export const breadcrumbsPartial = `{{#if breadcrumbs}}
+<nav aria-label="Breadcrumb">
+<ol itemscope itemtype="https://schema.org/BreadcrumbList">
+{{#each breadcrumbs}}<li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+<a itemprop="item" href="{{url}}"><span itemprop="name">{{label}}</span></a>
+<meta itemprop="position" content="{{position}}">
+</li>
+{{/each}}</ol>
+</nav>
+{{/if}}`
+
+export const articleCardPartial = `<div class="card">
+<h2><a href="{{url}}">{{title}}</a></h2>
+<div class="meta">
+<time datetime="{{iso_date}}">{{formatted_date}}</time>
+{{#if reading_time}}<span>{{reading_time}} min read</span>{{/if}}
+</div>
+{{#if excerpt}}<p class="excerpt">{{excerpt}}</p>{{/if}}
+</div>`

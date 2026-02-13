@@ -52,15 +52,23 @@ export const coreService = {
 
   // ====== Recipes ======
 
-  async getRecipes(): Promise<Recipe[]> {
+  async getRecipes(sortBy?: string): Promise<Recipe[]> {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Not authenticated')
+
+    const sortMap: Record<string, { column: string; ascending: boolean }> = {
+      updated: { column: 'updated_at', ascending: false },
+      created: { column: 'created_at', ascending: false },
+      name_asc: { column: 'name', ascending: true },
+      name_za: { column: 'name', ascending: false },
+    }
+    const sort = sortMap[sortBy || 'updated'] || sortMap.updated
 
     const { data, error } = await supabase
       .from('recipes')
       .select('*')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+      .order(sort.column, { ascending: sort.ascending })
 
     if (error) throw new Error(`Failed to fetch recipes: ${error.message}`)
     return (data || []) as Recipe[]

@@ -1,7 +1,7 @@
 // Platform Adapter Interface
 // Defines a common contract for CMS platforms (WordPress, Shopify, Webflow).
 
-export type PlatformId = 'wordpress' | 'shopify' | 'webflow'
+export type PlatformId = 'wordpress' | 'shopify' | 'webflow' | 'antigravity'
 
 export interface PlatformPost {
   id: string | number

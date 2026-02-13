@@ -14,10 +14,10 @@
 import type { SEOModule, ModuleAction, ModuleContext, ModuleSidebarConfig } from '@/lib/core/module-interface'
 import type { CoreEvent, EventType, ModuleId, ApiKeyType } from '@/lib/core/events'
 import {
-  createDataForSEOClient,
   estimateOnPageCost,
   type OnPageTaskConfig,
 } from '@/lib/dataforseo/client'
+import { createLoggedDataForSEOClient } from '@/lib/dataforseo/logged-client'
 
 export class CompetitorAnatomyModule implements SEOModule {
   id: ModuleId = 'competitor-anatomy'
@@ -150,7 +150,7 @@ export class CompetitorAnatomyModule implements SEOModule {
   private getClient(context: ModuleContext) {
     const dfsKey = context.apiKeys['dataforseo']
     if (!dfsKey) throw new Error('DataForSEO API key not configured')
-    return createDataForSEOClient(dfsKey)
+    return createLoggedDataForSEOClient(dfsKey, context.supabase, context.userId)
   }
 
   // ====== Action Handlers ======
