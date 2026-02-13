@@ -7,7 +7,8 @@ import {
   PlusCircle, FileText, CheckCircle, Sparkles, Activity, AlertCircle, Search,
   TrendingUp, Settings, ExternalLink, Calendar, Wifi, WifiOff,
   RefreshCw, Loader2, Globe, BarChart3, Image as ImageIcon, BookOpen, Users, Bot,
-  Database, Wand2, Timer, Rss, Send, Palette, Swords, GripVertical, Microscope, Rocket
+  Database, Wand2, Timer, Rss, Send, Palette, Swords, GripVertical, Microscope, Rocket,
+  Magnet, FlaskConical
 } from 'lucide-react';
 import { THEMES, THEME_COLORS } from '../constants';
 import AddSiteModal from './AddSiteModal';
@@ -87,6 +88,9 @@ const MODULE_NAV: { id: string; name: string; icon: React.ReactNode; iconBg: str
   { id: 'telegraph', name: 'Telegraph', icon: <Send size={18} />, iconBg: 'bg-sky-50 text-sky-600', viewState: 'telegraph' },
   { id: 'competitor-analysis', name: 'Competitor Insight', icon: <Swords size={18} />, iconBg: 'bg-red-50 text-red-600', viewState: 'competitor-analysis' },
   { id: 'competitor-anatomy', name: 'Competitor Anatomy', icon: <Microscope size={18} />, iconBg: 'bg-violet-50 text-violet-600', viewState: 'competitor-anatomy' },
+  { id: 'lead-factory', name: 'Lead Factory', icon: <Magnet size={18} />, iconBg: 'bg-rose-50 text-rose-600', viewState: 'lead-factory' },
+  { id: 'conversion-lab', name: 'Conversion Lab', icon: <FlaskConical size={18} />, iconBg: 'bg-fuchsia-50 text-fuchsia-600', viewState: 'conversion-lab' },
+  { id: 'landing-engine', name: 'Landing Engine', icon: <Rocket size={18} />, iconBg: 'bg-indigo-50 text-indigo-600', viewState: 'landing-engine' },
 ];
 
 // Helper: check if a site has CMS credentials

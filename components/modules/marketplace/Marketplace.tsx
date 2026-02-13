@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import {
   Globe, Sparkles, Search, BarChart3, Image as ImageIcon,
   Loader2, AlertCircle, ChevronLeft, Store, Settings, X, ShieldAlert,
-  BookOpen, Users, Bot, Database, Wand2, FileText, Download, Timer, Rss, Send, Swords, Microscope, MessageCircle
+  BookOpen, Users, Bot, Database, Wand2, FileText, Download, Timer, Rss, Send, Swords, Microscope, MessageCircle,
+  Magnet, FlaskConical, Rocket
 } from 'lucide-react';
 import { useCore } from '@/lib/contexts/CoreContext';
 import { useToggleModule } from '@/hooks/useModules';
@@ -223,6 +224,40 @@ const MODULE_CARDS: {
     requiredKeys: [],
     status: 'ready',
     viewState: 'any-chat',
+  },
+  // Growth modules
+  {
+    id: 'lead-factory',
+    name: 'Lead Factory',
+    description: 'Lead capture forms, lead magnets, and automated email delivery for landing pages.',
+    icon: <Magnet size={24} />,
+    iconBg: 'bg-rose-50 text-rose-600',
+    gradient: 'from-rose-500 to-pink-600',
+    requiredKeys: [],
+    status: 'ready',
+    viewState: 'lead-factory',
+  },
+  {
+    id: 'conversion-lab',
+    name: 'Conversion Lab',
+    description: 'CRM pipeline, lead scoring, Silent Pulse analytics, and Ghost Popup behavioral targeting.',
+    icon: <FlaskConical size={24} />,
+    iconBg: 'bg-fuchsia-50 text-fuchsia-600',
+    gradient: 'from-fuchsia-500 to-purple-600',
+    requiredKeys: [],
+    status: 'ready',
+    viewState: 'conversion-lab',
+  },
+  {
+    id: 'landing-engine',
+    name: 'Landing Engine',
+    description: 'Ultra-light CMS: static site builder, Cloudflare R2 deploy, custom domains, and edge analytics.',
+    icon: <Rocket size={24} />,
+    iconBg: 'bg-indigo-50 text-indigo-600',
+    gradient: 'from-indigo-500 to-blue-600',
+    requiredKeys: [],
+    status: 'ready',
+    viewState: 'landing-engine',
   },
 ];
 

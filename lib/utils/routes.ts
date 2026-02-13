@@ -29,6 +29,9 @@ export const DASHBOARD_ROUTES: Record<string, string> = {
   'any-chat': '/dashboard/any-chat',
   'task-history': '/dashboard/tasks',
   'admin': '/dashboard/admin',
+  'lead-factory': '/dashboard/lead-factory',
+  'conversion-lab': '/dashboard/conversion-lab',
+  'landing-engine': '/dashboard/landing-engine',
 }
 
 export function getRouteForView(view: string, siteId?: string): string {

@@ -31,6 +31,7 @@ export type ModuleId =
   | 'competitor-anatomy'
   | 'lead-factory'
   | 'conversion-lab'
+  | 'landing-engine'
 
 // ====== API Key Types ======
 
