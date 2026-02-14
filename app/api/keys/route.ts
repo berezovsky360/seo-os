@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const validTypes = ['gemini', 'dataforseo', 'gsc', 'ga4']
+    const validTypes = ['gemini', 'dataforseo', 'gsc', 'ga4', 'cloudflare']
     if (!validTypes.includes(key_type)) {
       return NextResponse.json(
         { error: `Invalid key_type. Must be one of: ${validTypes.join(', ')}` },

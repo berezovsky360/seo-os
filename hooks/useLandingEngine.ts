@@ -383,6 +383,76 @@ export function useExperimentStats(siteId: string | null, experimentId: string |
   })
 }
 
+// ====== Cloudflare Integration ======
+
+export function useCloudflareVerify() {
+  return useQuery({
+    queryKey: ['cloudflare-verify'],
+    queryFn: async () => {
+      const res = await fetch('/api/landing/cloudflare/verify')
+      if (!res.ok) throw new Error('Failed to verify Cloudflare')
+      return res.json() as Promise<{ connected: boolean; accounts?: { id: string; name: string }[]; error?: string }>
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  })
+}
+
+export function useCloudflareBuckets(accountId: string | null) {
+  return useQuery({
+    queryKey: ['cloudflare-buckets', accountId],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const res = await fetch(`/api/landing/cloudflare/buckets?account_id=${accountId}`)
+      if (!res.ok) throw new Error('Failed to list buckets')
+      return res.json() as Promise<{ buckets: { name: string; creation_date: string }[]; endpoint: string }>
+    },
+  })
+}
+
+export function useCreateCloudflareBucket() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (params: { account_id: string; name: string; location?: string }) => {
+      const res = await fetch('/api/landing/cloudflare/buckets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed' }))
+        throw new Error(err.error || 'Failed to create bucket')
+      }
+      return res.json() as Promise<{ bucket: { name: string }; endpoint: string }>
+    },
+    onSuccess: (_data, vars) => qc.invalidateQueries({ queryKey: ['cloudflare-buckets', vars.account_id] }),
+  })
+}
+
+export function useCloudflareZones() {
+  return useQuery({
+    queryKey: ['cloudflare-zones'],
+    queryFn: async () => {
+      const res = await fetch('/api/landing/cloudflare/zones')
+      if (!res.ok) throw new Error('Failed to list zones')
+      return res.json() as Promise<{ zones: { id: string; name: string; status: string }[] }>
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useCloudflareDnsCheck(zoneId: string | null, domain: string | null) {
+  return useQuery({
+    queryKey: ['cloudflare-dns', zoneId, domain],
+    enabled: !!zoneId && !!domain,
+    queryFn: async () => {
+      const res = await fetch(`/api/landing/cloudflare/zones?zone_id=${zoneId}&domain=${domain}`)
+      if (!res.ok) throw new Error('Failed to check DNS')
+      return res.json() as Promise<{ dns: { found: boolean; hasCname: boolean; hasProxy: boolean; records: any[] } }>
+    },
+  })
+}
+
 // ====== AI Page Generation ======
 
 export function useAIGenerate() {
@@ -393,29 +463,28 @@ export function useAIGenerate() {
       referenceImages?: { data: string; mime: string }[]
       currentHtml?: string
       history?: { role: string; text: string }[]
+      signal?: AbortSignal
     }) => {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 120_000) // 2 min timeout
-
+      const { signal, ...body } = params
       try {
         const res = await fetch('/api/landing/ai-generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(params),
-          signal: controller.signal,
+          body: JSON.stringify(body),
+          signal,
         })
         if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: 'Generation failed' }))
-          throw new Error(err.error || 'Generation failed')
+          const ct = res.headers.get('content-type') || ''
+          if (ct.includes('json')) {
+            const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+            throw new Error(err.error || `HTTP ${res.status}`)
+          }
+          throw new Error(`Server error (${res.status})`)
         }
-        return res.json() as Promise<{ html: string; usage: any; estimated_cost: number; model?: string }>
+        return await res.json() as { html: string; usage: any; estimated_cost: number; model?: string }
       } catch (e: any) {
-        if (e.name === 'AbortError') {
-          throw new Error('Generation timed out after 2 minutes. Try with fewer images or a simpler prompt.')
-        }
+        if (e.name === 'AbortError') throw new Error('Generation cancelled')
         throw e
-      } finally {
-        clearTimeout(timeout)
       }
     },
   })

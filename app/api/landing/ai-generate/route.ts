@@ -5,22 +5,43 @@ import { decrypt, getEncryptionKey } from '@/lib/utils/encryption'
 import { calculateCost, DEFAULT_MODEL } from '@/lib/modules/ai-writer/pricing'
 import { checkBudget } from '@/lib/utils/usage-budget'
 
-// Allow long-running generation (up to 2 min) and large payloads (base64 images)
-export const maxDuration = 120
+// Allow long-running generation (up to 5 min) and large payloads (base64 images)
+export const maxDuration = 300
 
-const SYSTEM_PROMPT = `You are an expert web designer. Generate clean, responsive HTML + CSS for a landing page section.
-Rules:
-- Output ONLY the HTML content (no <!DOCTYPE>, <html>, <head>, <body> wrappers)
-- Use a single <style> tag at the top for all CSS
-- Fully responsive, mobile-first design
-- Modern, clean design with good typography and spacing
-- Use semantic HTML (section, header, nav, article, footer)
-- Use placeholder images from https://picsum.photos (e.g. https://picsum.photos/800/400)
-- Include realistic placeholder text
-- No external CDN links, no JavaScript frameworks
-- No JavaScript unless absolutely necessary for interactivity
-- Use CSS Grid or Flexbox for layout
-- Include hover states for interactive elements`
+const SYSTEM_PROMPT = `You are an elite frontend developer and UI/UX designer specializing in high-converting landing pages.
+
+TECHNOLOGY STACK:
+- Start with: <script src="https://cdn.tailwindcss.com"></script>
+- Use ONLY Tailwind CSS utility classes for ALL styling — do NOT write any custom CSS or <style> tags
+- Use inline Tailwind config via <script> tag if you need custom colors:
+  <script>tailwindcss.config={theme:{extend:{colors:{brand:'#6B22CC',accent:'#00C25E'}}}}</script>
+- For icons use inline SVG (heroicons style) — no external icon libraries
+- Only use vanilla JS if essential for interactivity (mobile menu toggle, smooth scroll)
+
+OUTPUT RULES:
+- Output clean HTML with Tailwind classes (no <!DOCTYPE>, <html>, <head>, <body> wrappers)
+- Every element must be styled via Tailwind classes, never via style="" attributes or custom CSS
+- Use semantic HTML5: <section>, <header>, <nav>, <article>, <footer>
+
+DESIGN PRINCIPLES:
+- Mobile-first responsive design: start with mobile, add md: and lg: breakpoints
+- Typography: text-4xl md:text-5xl lg:text-6xl for h1, text-lg/text-xl for body, font-sans
+- Spacing: py-16 md:py-24 for sections, consistent gap-6/gap-8 rhythm
+- Color: cohesive palette using Tailwind color families (slate, emerald, indigo, etc.)
+- Rounded corners: rounded-xl/rounded-2xl for cards, rounded-full for avatars/badges
+- Shadows: shadow-sm for cards, shadow-lg for elevated elements, shadow-xl for modals
+- Hover states: hover:shadow-lg, hover:-translate-y-1, hover:bg-opacity transitions
+- CTA buttons: min h-12, px-8, rounded-xl, font-semibold, transition-all duration-300
+- Images: use https://picsum.photos/seed/{name}/{w}/{h} for consistency
+- Grid layouts: grid md:grid-cols-2 lg:grid-cols-3 gap-8 for feature cards
+- Max-width containers: max-w-7xl mx-auto px-6
+
+CONTENT:
+- Write realistic, compelling copy in the language specified by the user (not lorem ipsum)
+- Include trust signals: testimonials with avatars, stats with large numbers, client logos
+- Clear value proposition in the hero section with one primary CTA
+- Logical content flow: Hero → Features/Benefits → Social Proof → Process → FAQ → CTA
+- Use visual hierarchy: badges/labels above headings, muted descriptions below`
 
 export async function POST(request: NextRequest) {
   try {
@@ -87,6 +108,7 @@ export async function POST(request: NextRequest) {
     const { GoogleGenAI } = await import('@google/genai')
     const ai = new GoogleGenAI({ apiKey: decryptedKey })
 
+    // Build contents — ONLY user messages, no system prompt mixed in
     let contents: any
 
     if (mode === 'reference') {
@@ -95,17 +117,17 @@ export async function POST(request: NextRequest) {
       }))
       const imageCount = referenceImages!.length
       const textInstruction = imageCount === 1
-        ? 'Recreate this design as clean HTML+CSS. Match the layout, colors, typography, and structure as closely as possible.'
+        ? 'Recreate this design as a landing page. Match the layout, colors, typography, and structure as closely as possible.'
         : `I'm providing ${imageCount} reference images. Analyze all of them and create a cohesive landing page that combines the best design elements, layout patterns, colors, and typography from these references.`
       contents = [{
         role: 'user',
         parts: [
           ...imageParts,
-          { text: SYSTEM_PROMPT + '\n\n' + textInstruction + (prompt ? `\n\nAdditional instructions: ${prompt}` : '') },
+          { text: textInstruction + (prompt ? `\n\nAdditional instructions: ${prompt}` : '') },
         ],
       }]
     } else if (mode === 'prompt') {
-      contents = SYSTEM_PROMPT + '\n\nCreate a landing page with the following description:\n' + prompt
+      contents = `Create a landing page with the following description:\n${prompt}`
     } else {
       // refine mode — include conversation history
       const msgs: any[] = []
@@ -116,23 +138,28 @@ export async function POST(request: NextRequest) {
       }
       msgs.push({
         role: 'user',
-        parts: [{ text: SYSTEM_PROMPT + `\n\nHere is the current HTML:\n\`\`\`html\n${currentHtml}\n\`\`\`\n\nModify it according to this instruction: ${prompt}\n\nReturn the FULL updated HTML (not just the changed parts).` }],
+        parts: [{ text: `Here is the current HTML:\n\`\`\`html\n${currentHtml}\n\`\`\`\n\nModify it according to this instruction: ${prompt}\n\nReturn the FULL updated HTML (not just the changed parts).` }],
       })
       contents = msgs
+    }
+
+    // Gemini config: systemInstruction is separate (like AI Studio) for stronger adherence
+    const generationConfig = {
+      systemInstruction: SYSTEM_PROMPT,
     }
 
     // Try preferred model, fallback to flash on quota/rate errors
     let response: any
     let model = preferredModel
     try {
-      response = await ai.models.generateContent({ model, contents })
+      response = await ai.models.generateContent({ model, contents, config: generationConfig })
     } catch (genErr: any) {
       const status = genErr?.status ?? genErr?.httpStatusCode ?? 0
       const msg = genErr?.message || ''
       if ((status === 429 || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')) && preferredModel !== fallbackModel) {
         console.warn(`[AI] ${preferredModel} quota hit, falling back to ${fallbackModel}`)
         model = fallbackModel
-        response = await ai.models.generateContent({ model, contents })
+        response = await ai.models.generateContent({ model, contents, config: generationConfig })
       } else {
         throw genErr
       }

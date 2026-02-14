@@ -29,6 +29,11 @@ import {
   Play,
   Pause,
   Trophy,
+  CheckCircle2,
+  AlertCircle,
+  Database,
+  Key,
+  ShieldCheck,
 } from 'lucide-react'
 import {
   useLandingSites,
@@ -47,6 +52,11 @@ import {
   useCreateExperiment,
   useDeleteExperiment,
   useUpdateExperiment,
+  useCloudflareVerify,
+  useCloudflareBuckets,
+  useCreateCloudflareBucket,
+  useCloudflareZones,
+  useCloudflareDnsCheck,
 } from '@/hooks/useLandingEngine'
 import PulseAnalytics from '@/components/modules/conversion-lab/PulseAnalytics'
 import LandingPageEditor from './LandingPageEditor'
@@ -661,22 +671,92 @@ function DeployTab({
   buildResult: any
 }) {
   const [deployMode, setDeployMode] = useState<string>(site.deploy_mode || 'internal')
-  const [r2Bucket, setR2Bucket] = useState(site.r2_bucket || '')
-  const [r2Endpoint, setR2Endpoint] = useState(site.r2_endpoint || '')
-  const [r2AccessKey, setR2AccessKey] = useState('')
-  const [r2SecretKey, setR2SecretKey] = useState('')
   const [pulseEnabled, setPulseEnabled] = useState(site.pulse_enabled !== false)
+  const [cfToken, setCfToken] = useState('')
+  const [showTokenInput, setShowTokenInput] = useState(false)
+  const [savingToken, setSavingToken] = useState(false)
+  const [tokenError, setTokenError] = useState<string | null>(null)
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
+  const [newBucketName, setNewBucketName] = useState('')
+  const [showCreateBucket, setShowCreateBucket] = useState(false)
 
-  const handleSaveR2 = () => {
-    const updates: Record<string, any> = {
-      deploy_mode: deployMode,
-      r2_bucket: r2Bucket || null,
-      r2_endpoint: r2Endpoint || null,
-      pulse_enabled: pulseEnabled,
+  // Cloudflare hooks
+  const cfVerify = useCloudflareVerify()
+  const cfBuckets = useCloudflareBuckets(selectedAccountId)
+  const createBucket = useCreateCloudflareBucket()
+  const cfZones = useCloudflareZones()
+
+  // Auto-select first account when CF is connected
+  React.useEffect(() => {
+    if (cfVerify.data?.connected && cfVerify.data.accounts?.length && !selectedAccountId) {
+      setSelectedAccountId(cfVerify.data.accounts[0].id)
     }
-    if (r2AccessKey) updates.r2_access_key_encrypted = r2AccessKey
-    if (r2SecretKey) updates.r2_secret_key_encrypted = r2SecretKey
-    onUpdateInfra(updates)
+  }, [cfVerify.data, selectedAccountId])
+
+  // DNS check for site domain
+  const siteZoneId = React.useMemo(() => {
+    if (!site.domain || !cfZones.data?.zones) return null
+    const domainParts = site.domain.split('.')
+    const rootDomain = domainParts.slice(-2).join('.')
+    const zone = cfZones.data.zones.find(z => z.name === rootDomain)
+    return zone?.id || null
+  }, [site.domain, cfZones.data])
+
+  const dnsCheck = useCloudflareDnsCheck(siteZoneId, site.domain || null)
+
+  const handleSaveToken = async () => {
+    if (!cfToken.trim()) return
+    setSavingToken(true)
+    setTokenError(null)
+    try {
+      const res = await fetch('/api/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key_type: 'cloudflare', value: cfToken.trim(), label: 'Cloudflare API Token' }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed' }))
+        throw new Error(err.error || 'Failed to save token')
+      }
+      // Verify the token with Cloudflare API
+      const verifyResult = await cfVerify.refetch()
+      if (verifyResult.data?.connected) {
+        setCfToken('')
+        setShowTokenInput(false)
+      } else {
+        throw new Error(verifyResult.data?.error || 'Token saved but Cloudflare verification failed. Check token permissions.')
+      }
+    } catch (e: any) {
+      setTokenError(e.message)
+    } finally {
+      setSavingToken(false)
+    }
+  }
+
+  const handleSelectBucket = (bucketName: string) => {
+    if (!selectedAccountId) return
+    const endpoint = `https://${selectedAccountId}.r2.cloudflarestorage.com`
+    onUpdateInfra({
+      deploy_mode: 'r2',
+      r2_bucket: bucketName,
+      r2_endpoint: endpoint,
+    })
+  }
+
+  const handleCreateBucket = async () => {
+    if (!selectedAccountId || !newBucketName.trim()) return
+    try {
+      const result = await createBucket.mutateAsync({
+        account_id: selectedAccountId,
+        name: newBucketName.trim().toLowerCase(),
+      })
+      setShowCreateBucket(false)
+      setNewBucketName('')
+      // Auto-select the new bucket
+      handleSelectBucket(result.bucket.name)
+    } catch {
+      // error handled by mutation
+    }
   }
 
   const handleTogglePulse = () => {
@@ -684,6 +764,9 @@ function DeployTab({
     setPulseEnabled(next)
     onUpdateInfra({ pulse_enabled: next })
   }
+
+  const isConnected = cfVerify.data?.connected
+  const accounts = cfVerify.data?.accounts || []
 
   return (
     <div className="space-y-6">
@@ -716,73 +799,316 @@ function DeployTab({
         </div>
       </div>
 
-      {/* R2 Configuration */}
+      {/* Cloudflare Integration */}
       {deployMode === 'r2' && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="text-sm font-bold text-gray-900 mb-4">R2 Configuration</h3>
-          <div className="space-y-4">
-            <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
-                R2 Bucket
-              </label>
-              <input
-                type="text"
-                value={r2Bucket}
-                onChange={(e) => setR2Bucket(e.target.value)}
-                placeholder="my-landing-bucket"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
-                R2 Endpoint
-              </label>
-              <input
-                type="text"
-                value={r2Endpoint}
-                onChange={(e) => setR2Endpoint(e.target.value)}
-                placeholder="https://account-id.r2.cloudflarestorage.com"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
-                  R2 Access Key
-                </label>
-                <input
-                  type="password"
-                  value={r2AccessKey}
-                  onChange={(e) => setR2AccessKey(e.target.value)}
-                  placeholder={site.r2_bucket ? '********' : 'Enter access key'}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
+        <>
+          {/* ── Connection Status ── */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Cloud size={16} className="text-orange-500" />
+                <h3 className="text-sm font-bold text-gray-900">Cloudflare Connection</h3>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
-                  R2 Secret Key
-                </label>
-                <input
-                  type="password"
-                  value={r2SecretKey}
-                  onChange={(e) => setR2SecretKey(e.target.value)}
-                  placeholder={site.r2_bucket ? '********' : 'Enter secret key'}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
+              {isConnected && (
+                <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                  <CheckCircle2 size={12} />
+                  Connected
+                </span>
+              )}
+            </div>
+
+            {cfVerify.isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-gray-400">
+                <Loader2 size={14} className="animate-spin" />
+                Checking connection...
               </div>
-            </div>
-            <div className="flex justify-end">
-              <button
-                onClick={handleSaveR2}
-                disabled={isSavingInfra}
-                className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg shadow-md shadow-indigo-200 disabled:opacity-50 transition-colors flex items-center gap-2"
-              >
-                {isSavingInfra ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                Save R2 Config
-              </button>
-            </div>
+            ) : isConnected ? (
+              <div className="space-y-3">
+                {/* Account selector */}
+                {accounts.length > 1 && (
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+                      Account
+                    </label>
+                    <select
+                      value={selectedAccountId || ''}
+                      onChange={(e) => setSelectedAccountId(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                    >
+                      {accounts.map((acc) => (
+                        <option key={acc.id} value={acc.id}>{acc.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {accounts.length === 1 && (
+                  <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
+                    <ShieldCheck size={12} />
+                    Account: <span className="font-medium text-gray-700">{accounts[0].name}</span>
+                  </div>
+                )}
+                {accounts.length === 0 && (
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+                      Account ID
+                    </label>
+                    <p className="text-[11px] text-gray-400 mb-1.5">
+                      Find it in Cloudflare Dashboard URL: dash.cloudflare.com/<span className="font-mono">account-id</span>
+                    </p>
+                    <input
+                      type="text"
+                      value={selectedAccountId || ''}
+                      onChange={(e) => setSelectedAccountId(e.target.value.trim())}
+                      placeholder="e.g. a1b2c3d4e5f6..."
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                    />
+                  </div>
+                )}
+                <button
+                  onClick={() => setShowTokenInput(true)}
+                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  Change API token
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-500">
+                  Connect your Cloudflare account to manage R2 buckets, DNS, and deployments automatically.
+                </p>
+                {!showTokenInput ? (
+                  <button
+                    onClick={() => setShowTokenInput(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors"
+                  >
+                    <Key size={14} />
+                    Connect Cloudflare
+                  </button>
+                ) : null}
+              </div>
+            )}
+
+            {/* Token input */}
+            {showTokenInput && (
+              <div className="mt-3 space-y-2">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block">
+                  Cloudflare API Token
+                </label>
+                <p className="text-[11px] text-gray-400">
+                  Create a token at Cloudflare Dashboard → My Profile → API Tokens. Required permissions: Account &gt; Workers R2 Storage &gt; Edit. Optional: Account Settings &gt; Read (auto-detect account).
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={cfToken}
+                    onChange={(e) => setCfToken(e.target.value)}
+                    placeholder="Paste your Cloudflare API token"
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveToken()}
+                  />
+                  <button
+                    onClick={handleSaveToken}
+                    disabled={savingToken || !cfToken.trim()}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+                  >
+                    {savingToken ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                    Save
+                  </button>
+                  <button
+                    onClick={() => { setShowTokenInput(false); setCfToken(''); setTokenError(null) }}
+                    className="p-2 text-gray-400 hover:text-gray-600 rounded-lg transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+                {tokenError && (
+                  <p className="text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle size={12} />
+                    {tokenError}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
-        </div>
+
+          {/* ── R2 Bucket Selector ── */}
+          {isConnected && selectedAccountId && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Database size={16} className="text-indigo-500" />
+                  <h3 className="text-sm font-bold text-gray-900">R2 Bucket</h3>
+                </div>
+                {site.r2_bucket && (
+                  <span className="text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded-lg font-mono">
+                    {site.r2_bucket}
+                  </span>
+                )}
+              </div>
+
+              {cfBuckets.isLoading ? (
+                <div className="flex items-center gap-2 text-sm text-gray-400">
+                  <Loader2 size={14} className="animate-spin" />
+                  Loading buckets...
+                </div>
+              ) : cfBuckets.error ? (
+                <div className="text-xs text-red-600 flex items-center gap-1">
+                  <AlertCircle size={12} />
+                  {(cfBuckets.error as Error).message}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Bucket list */}
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {(cfBuckets.data?.buckets || []).map((bucket) => (
+                      <button
+                        key={bucket.name}
+                        onClick={() => handleSelectBucket(bucket.name)}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm text-left transition-all ${
+                          site.r2_bucket === bucket.name
+                            ? 'bg-indigo-50 border border-indigo-200 text-indigo-700'
+                            : 'bg-gray-50 border border-gray-100 text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Database size={13} className={site.r2_bucket === bucket.name ? 'text-indigo-500' : 'text-gray-400'} />
+                          <span className="font-mono text-xs">{bucket.name}</span>
+                        </div>
+                        {site.r2_bucket === bucket.name && (
+                          <CheckCircle2 size={14} className="text-indigo-500" />
+                        )}
+                      </button>
+                    ))}
+
+                    {(cfBuckets.data?.buckets || []).length === 0 && (
+                      <p className="text-xs text-gray-400 text-center py-4">No R2 buckets found. Create one below.</p>
+                    )}
+                  </div>
+
+                  {/* Create new bucket */}
+                  {showCreateBucket ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newBucketName}
+                        onChange={(e) => setNewBucketName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                        placeholder="my-landing-bucket"
+                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        onKeyDown={(e) => e.key === 'Enter' && handleCreateBucket()}
+                        autoFocus
+                      />
+                      <button
+                        onClick={handleCreateBucket}
+                        disabled={createBucket.isPending || !newBucketName.trim()}
+                        className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                      >
+                        {createBucket.isPending ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                        Create
+                      </button>
+                      <button
+                        onClick={() => { setShowCreateBucket(false); setNewBucketName('') }}
+                        className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowCreateBucket(true)}
+                      className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 font-medium transition-colors"
+                    >
+                      <Plus size={12} />
+                      Create New Bucket
+                    </button>
+                  )}
+
+                  {createBucket.error && (
+                    <p className="text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle size={12} />
+                      {(createBucket.error as Error).message}
+                    </p>
+                  )}
+
+                  {/* R2 Access Keys info */}
+                  {site.r2_bucket && !site.r2_access_key_encrypted && (
+                    <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle size={14} className="text-amber-600 mt-0.5 shrink-0" />
+                        <div className="text-xs text-amber-700">
+                          <p className="font-medium">R2 API keys required for deploy</p>
+                          <p className="mt-0.5 text-amber-600">
+                            Go to Cloudflare Dashboard → R2 → Manage R2 API Tokens → Create API Token.
+                            Then paste the Access Key ID and Secret below.
+                          </p>
+                          <R2KeysInput site={site} onUpdateInfra={onUpdateInfra} isSaving={isSavingInfra} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── DNS Status ── */}
+          {isConnected && site.domain && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Globe size={16} className="text-blue-500" />
+                <h3 className="text-sm font-bold text-gray-900">DNS Status</h3>
+              </div>
+
+              {!siteZoneId ? (
+                <div className="text-xs text-gray-500 flex items-center gap-1.5">
+                  <AlertCircle size={12} className="text-amber-500" />
+                  Domain <span className="font-mono font-medium">{site.domain}</span> not found in your Cloudflare zones
+                </div>
+              ) : dnsCheck.isLoading ? (
+                <div className="flex items-center gap-2 text-sm text-gray-400">
+                  <Loader2 size={14} className="animate-spin" />
+                  Checking DNS...
+                </div>
+              ) : dnsCheck.data?.dns ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    {dnsCheck.data.dns.found ? (
+                      <CheckCircle2 size={14} className="text-emerald-500" />
+                    ) : (
+                      <AlertCircle size={14} className="text-amber-500" />
+                    )}
+                    <span className="text-sm text-gray-700">
+                      {dnsCheck.data.dns.found
+                        ? `${dnsCheck.data.dns.records.length} DNS record${dnsCheck.data.dns.records.length > 1 ? 's' : ''} found`
+                        : 'No DNS records found'}
+                    </span>
+                  </div>
+                  {dnsCheck.data.dns.hasCname && (
+                    <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                      <CheckCircle2 size={10} /> CNAME configured
+                    </span>
+                  )}
+                  {dnsCheck.data.dns.hasProxy && (
+                    <span className="text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                      <ShieldCheck size={10} /> Proxied (SSL auto)
+                    </span>
+                  )}
+                  {dnsCheck.data.dns.records.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {dnsCheck.data.dns.records.map((r: any) => (
+                        <div key={r.id} className="flex items-center gap-3 text-xs text-gray-500 bg-gray-50 px-2.5 py-1.5 rounded-lg font-mono">
+                          <span className="text-gray-400 w-12">{r.type}</span>
+                          <span className="text-gray-700 flex-1 truncate">{r.name}</span>
+                          <span className="text-gray-400 truncate max-w-[200px]">{r.content}</span>
+                          {r.proxied && <Cloud size={10} className="text-orange-400 shrink-0" />}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          )}
+        </>
       )}
 
       {/* Build & Deploy */}
@@ -868,6 +1194,57 @@ function DeployTab({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── R2 API Keys sub-form (shown when bucket selected but no keys yet) ──
+function R2KeysInput({
+  site,
+  onUpdateInfra,
+  isSaving,
+}: {
+  site: any
+  onUpdateInfra: (updates: Record<string, any>) => void
+  isSaving: boolean
+}) {
+  const [accessKey, setAccessKey] = useState('')
+  const [secretKey, setSecretKey] = useState('')
+
+  const handleSave = () => {
+    if (!accessKey || !secretKey) return
+    onUpdateInfra({
+      r2_access_key_encrypted: accessKey,
+      r2_secret_key_encrypted: secretKey,
+    })
+    setAccessKey('')
+    setSecretKey('')
+  }
+
+  return (
+    <div className="mt-2 space-y-2">
+      <input
+        type="password"
+        value={accessKey}
+        onChange={(e) => setAccessKey(e.target.value)}
+        placeholder="Access Key ID"
+        className="w-full px-2.5 py-1.5 border border-amber-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+      />
+      <input
+        type="password"
+        value={secretKey}
+        onChange={(e) => setSecretKey(e.target.value)}
+        placeholder="Secret Access Key"
+        className="w-full px-2.5 py-1.5 border border-amber-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+      />
+      <button
+        onClick={handleSave}
+        disabled={isSaving || !accessKey || !secretKey}
+        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+      >
+        {isSaving ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
+        Save Keys
+      </button>
     </div>
   )
 }
