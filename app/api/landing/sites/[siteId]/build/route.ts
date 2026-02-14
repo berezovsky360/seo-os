@@ -204,17 +204,31 @@ export async function POST(
 
   const edgeRules: EdgeRule[] = siteRow.edge_rules || []
 
-  // 11. Deploy to R2 (if configured)
+  // 11. Deploy to R2
   let deploy: { uploaded: number; skipped: number; errors: string[] } | null = null
 
+  // Determine R2 config: per-site credentials or shared seo-os-sites bucket
+  let r2Config: R2Config | null = null
+
   if (siteRow.r2_bucket && siteRow.r2_endpoint && siteRow.r2_access_key_encrypted && siteRow.r2_secret_key_encrypted) {
-    const r2Config: R2Config = {
+    // Per-site R2 credentials (custom bucket)
+    r2Config = {
       accountId: siteRow.r2_endpoint.replace('.r2.cloudflarestorage.com', '').replace('https://', ''),
       accessKeyId: siteRow.r2_access_key_encrypted,
       secretAccessKey: siteRow.r2_secret_key_encrypted,
       bucketName: siteRow.r2_bucket,
     }
+  } else if (siteRow.subdomain && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.CF_ACCOUNT_ID) {
+    // Subdomain site → deploy to shared seo-os-sites bucket
+    r2Config = {
+      accountId: process.env.CF_ACCOUNT_ID,
+      accessKeyId: process.env.R2_ACCESS_KEY_ID,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+      bucketName: process.env.R2_BUCKET_NAME || 'seo-os-sites',
+    }
+  }
 
+  if (r2Config) {
     const trackingScript = siteRow.pulse_enabled !== false
       ? getTrackingScript(siteId)
       : undefined

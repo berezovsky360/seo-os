@@ -1061,7 +1061,29 @@ function DeployTab({
           )}
 
           {/* ── DNS Status ── */}
-          {isConnected && site.domain && (
+          {site.subdomain ? (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Globe size={16} className="text-blue-500" />
+                <h3 className="text-sm font-bold text-gray-900">Hosting</h3>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={14} className="text-emerald-500" />
+                  <span className="text-sm text-gray-700">Cloudflare Workers + R2</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-gray-500 bg-gray-50 px-2.5 py-1.5 rounded-lg font-mono">
+                  <span className="text-gray-400 w-10">URL</span>
+                  <a href={`https://${site.subdomain}.seo-os.com`} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
+                    {site.subdomain}.seo-os.com
+                  </a>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Wildcard *.seo-os.com routing via universal Worker. No per-site DNS needed.
+                </p>
+              </div>
+            </div>
+          ) : isConnected && site.domain ? (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
               <div className="flex items-center gap-2 mb-3">
                 <Globe size={16} className="text-blue-500" />
@@ -1117,7 +1139,7 @@ function DeployTab({
                 </div>
               ) : null}
             </div>
-          )}
+          ) : null}
         </>
       )}
 
