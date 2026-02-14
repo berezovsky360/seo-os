@@ -88,7 +88,7 @@ export interface BuildResult {
 
 function getSiteUrl(site: LandingSite): string {
   if (site.domain) return `https://${site.domain}`
-  if (site.subdomain) return `https://${site.subdomain}`
+  if (site.subdomain) return `https://${site.subdomain}.seo-os.com`
   return ''
 }
 

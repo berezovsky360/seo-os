@@ -2,6 +2,18 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  // Landing page subdomain routing — skip auth entirely
+  const host = request.headers.get('host') || ''
+  const subdomainMatch = host.match(/^([a-z0-9-]+)\.seo-os\.com$/)
+  if (subdomainMatch) {
+    const subdomain = subdomainMatch[1]
+    if (!['www', 'app', 'dashboard'].includes(subdomain)) {
+      const url = request.nextUrl.clone()
+      url.pathname = `/landing-serve/${subdomain}${request.nextUrl.pathname}`
+      return NextResponse.rewrite(url)
+    }
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   })

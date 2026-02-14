@@ -9,7 +9,31 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+const ALLOWED_ORIGIN = /^https:\/\/[a-z0-9-]+\.seo-os\.com$/
+
+function corsHeaders(request: NextRequest): Record<string, string> {
+  const origin = request.headers.get('origin') || ''
+  if (ALLOWED_ORIGIN.test(origin)) {
+    return {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    }
+  }
+  return {}
+}
+
+// CORS preflight for cross-origin form submissions from *.seo-os.com
+export async function OPTIONS(request: NextRequest) {
+  const headers = corsHeaders(request)
+  if (headers['Access-Control-Allow-Origin']) {
+    return new Response(null, { status: 204, headers })
+  }
+  return new Response(null, { status: 403 })
+}
+
 export async function POST(request: NextRequest) {
+  const cors = corsHeaders(request)
   let body: Record<string, any>
 
   const contentType = request.headers.get('content-type') || ''
@@ -151,7 +175,7 @@ export async function POST(request: NextRequest) {
       quiz_score: quizScore,
       quiz_result_label: quizLabel,
       redirect_url: redirectUrl || undefined,
-    })
+    }, { headers: cors })
   }
 
   // Calculator result capture
@@ -176,5 +200,5 @@ export async function POST(request: NextRequest) {
     ok: true,
     message: form.success_message || 'Thank you!',
     lead_id: lead.id,
-  })
+  }, { headers: cors })
 }
