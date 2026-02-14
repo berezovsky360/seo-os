@@ -100,6 +100,11 @@ export async function deployToR2(
  * Converts rendered pages, sitemap, robots.txt, and RSS feed
  * into the file format expected by deployToR2.
  */
+export interface SiteConfig {
+  experiments?: { pageSlug: string; variants: { key: string; weight: number }[] }[]
+  edgeRules?: { type: string; enabled: boolean; rules?: { match: string; field: string; value: string }[] }[]
+}
+
 export function prepareBuildFiles(
   buildResult: {
     pages: { slug: string; html: string; validation: { valid: boolean }; variantKey?: string }[]
@@ -108,6 +113,7 @@ export function prepareBuildFiles(
     rssFeed: string
   },
   trackingScript?: string,
+  siteConfig?: SiteConfig,
 ): DeployFile[] {
   const files: DeployFile[] = []
 
@@ -139,6 +145,15 @@ export function prepareBuildFiles(
   files.push({ path: 'sitemap.xml', content: buildResult.sitemap, contentType: 'application/xml' })
   files.push({ path: 'robots.txt', content: buildResult.robotsTxt, contentType: 'text/plain' })
   files.push({ path: 'feed.xml', content: buildResult.rssFeed, contentType: 'application/xml' })
+
+  // Site config for universal worker (A/B tests, edge rules)
+  if (siteConfig) {
+    files.push({
+      path: '_config.json',
+      content: JSON.stringify(siteConfig),
+      contentType: 'application/json',
+    })
+  }
 
   return files
 }

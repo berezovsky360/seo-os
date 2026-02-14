@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { buildSite, type LandingTemplate, type LandingSite, type BuildPageInput } from '@/lib/landing-engine/builder'
-import { deployToR2, prepareBuildFiles, type R2Config } from '@/lib/landing-engine/deploy-r2'
+import { deployToR2, prepareBuildFiles, type R2Config, type SiteConfig } from '@/lib/landing-engine/deploy-r2'
 import { getTrackingScript } from '@/lib/landing-engine/tracking-script'
 import { getWorkerScript, type ABExperiment, type EdgeRule } from '@/lib/landing-engine/worker-template'
 import { generateInlineForm, generatePopupForm, type FormConfig, type PopupConfig } from '@/lib/modules/lead-factory/form-generator'
@@ -189,7 +189,22 @@ export async function POST(
     if (updateErr) errors.push(`Failed to save ${built.slug}: ${updateErr.message}`)
   }
 
-  // 10. Deploy to R2 (if configured)
+  // 10. Build A/B + edge rules config (used by both R2 deploy and worker)
+  const abExperiments: ABExperiment[] = (experiments || []).map((exp: any) => {
+    const page = (pageRows || []).find((p: any) => p.id === exp.landing_page_id)
+    const pageVariants = variantMap[exp.landing_page_id] || []
+    return {
+      pageSlug: page?.slug || '',
+      variants: pageVariants.map((v: any) => ({
+        key: v.variant_key.toLowerCase(),
+        weight: v.weight || 50,
+      })),
+    }
+  }).filter((e: ABExperiment) => e.pageSlug && e.variants.length > 0)
+
+  const edgeRules: EdgeRule[] = siteRow.edge_rules || []
+
+  // 11. Deploy to R2 (if configured)
   let deploy: { uploaded: number; skipped: number; errors: string[] } | null = null
 
   if (siteRow.r2_bucket && siteRow.r2_endpoint && siteRow.r2_access_key_encrypted && siteRow.r2_secret_key_encrypted) {
@@ -205,7 +220,8 @@ export async function POST(
       : undefined
 
     const siteSlug = siteRow.subdomain || siteRow.domain || siteId
-    const files = prepareBuildFiles(result, trackingScript)
+    const siteConfig: SiteConfig = { experiments: abExperiments, edgeRules }
+    const files = prepareBuildFiles(result, trackingScript, siteConfig)
 
     try {
       deploy = await deployToR2(r2Config, siteSlug, files)
@@ -216,21 +232,6 @@ export async function POST(
       errors.push(`R2 deploy failed: ${err.message}`)
     }
   }
-
-  // 11. Generate Worker script with A/B + edge rules config
-  const abExperiments: ABExperiment[] = (experiments || []).map((exp: any) => {
-    const page = (pageRows || []).find((p: any) => p.id === exp.landing_page_id)
-    const pageVariants = variantMap[exp.landing_page_id] || []
-    return {
-      pageSlug: page?.slug || '',
-      variants: pageVariants.map((v: any) => ({
-        key: v.variant_key.toLowerCase(),
-        weight: v.weight || 50,
-      })),
-    }
-  }).filter((e: ABExperiment) => e.pageSlug && e.variants.length > 0)
-
-  const edgeRules: EdgeRule[] = siteRow.edge_rules || []
 
   const siteSlugForWorker = siteRow.subdomain || siteRow.domain || siteId
   const workerScript = getWorkerScript({
