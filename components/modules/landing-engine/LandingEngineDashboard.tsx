@@ -388,13 +388,23 @@ function GeneralTab({ site, onSave, isSaving }: { site: LandingSite; onSave: (up
           <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
             Subdomain
           </label>
-          <input
-            type="text"
-            value={subdomain}
-            onChange={(e) => setSubdomain(e.target.value)}
-            placeholder="my-site"
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          />
+          <div className="flex items-center gap-0">
+            <input
+              type="text"
+              value={subdomain}
+              onChange={(e) => setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+              placeholder="my-site"
+              className="flex-1 px-3 py-2 border border-gray-200 rounded-l-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+            />
+            <span className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-200 rounded-r-lg text-sm text-gray-500 whitespace-nowrap">
+              .seo-os.com
+            </span>
+          </div>
+          {subdomain && (
+            <p className="text-[11px] text-indigo-500 mt-1">
+              {subdomain}.seo-os.com
+            </p>
+          )}
         </div>
       </div>
 
