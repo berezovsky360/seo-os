@@ -207,24 +207,26 @@ export async function POST(
   // 11. Deploy to R2
   let deploy: { uploaded: number; skipped: number; errors: string[] } | null = null
 
-  // Determine R2 config: per-site credentials or shared seo-os-sites bucket
+  // Determine R2 config: shared seo-os-sites bucket (subdomain) or per-site credentials
   let r2Config: R2Config | null = null
+  const hasPerSiteR2 = siteRow.r2_bucket && siteRow.r2_endpoint && siteRow.r2_access_key_encrypted && siteRow.r2_secret_key_encrypted
+  const hasSharedR2 = process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.CF_ACCOUNT_ID
 
-  if (siteRow.r2_bucket && siteRow.r2_endpoint && siteRow.r2_access_key_encrypted && siteRow.r2_secret_key_encrypted) {
+  if (siteRow.subdomain && hasSharedR2) {
+    // Subdomain site → always deploy to shared seo-os-sites bucket
+    r2Config = {
+      accountId: process.env.CF_ACCOUNT_ID!,
+      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+      bucketName: process.env.R2_BUCKET_NAME || 'seo-os-sites',
+    }
+  } else if (hasPerSiteR2) {
     // Per-site R2 credentials (custom bucket)
     r2Config = {
       accountId: siteRow.r2_endpoint.replace('.r2.cloudflarestorage.com', '').replace('https://', ''),
       accessKeyId: siteRow.r2_access_key_encrypted,
       secretAccessKey: siteRow.r2_secret_key_encrypted,
       bucketName: siteRow.r2_bucket,
-    }
-  } else if (siteRow.subdomain && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.CF_ACCOUNT_ID) {
-    // Subdomain site → deploy to shared seo-os-sites bucket
-    r2Config = {
-      accountId: process.env.CF_ACCOUNT_ID,
-      accessKeyId: process.env.R2_ACCESS_KEY_ID,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-      bucketName: process.env.R2_BUCKET_NAME || 'seo-os-sites',
     }
   }
 

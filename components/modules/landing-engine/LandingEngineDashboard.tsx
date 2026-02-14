@@ -34,6 +34,7 @@ import {
   Database,
   Key,
   ShieldCheck,
+  Home,
 } from 'lucide-react'
 import {
   useLandingSites,
@@ -46,6 +47,7 @@ import {
   useLandingPages,
   useCreateLandingPage,
   useDeleteLandingPage,
+  useUpdateLandingPage,
   useLandingTemplates,
   useSeedTemplates,
   useExperiments,
@@ -1617,6 +1619,7 @@ function PagesTab({ siteId }: { siteId: string }) {
   const { data: pages = [], isLoading } = useLandingPages(siteId)
   const createPage = useCreateLandingPage()
   const deletePage = useDeleteLandingPage()
+  const updatePage = useUpdateLandingPage()
   const [editingPageId, setEditingPageId] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [newTitle, setNewTitle] = useState('')
@@ -1640,6 +1643,17 @@ function PagesTab({ siteId }: { siteId: string }) {
   const handleDelete = async (pageId: string) => {
     if (!confirm('Delete this page? This cannot be undone.')) return
     await deletePage.mutateAsync({ siteId, pageId })
+  }
+
+  const handleSetHome = async (pageId: string) => {
+    const currentHome = pages.find((p: any) => p.slug === 'index')
+    // Unset old home page — give it a slug based on its title
+    if (currentHome && currentHome.id !== pageId) {
+      const fallbackSlug = (currentHome.title || 'page').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      await updatePage.mutateAsync({ siteId, pageId: currentHome.id, updates: { slug: fallbackSlug } })
+    }
+    // Set new home page
+    await updatePage.mutateAsync({ siteId, pageId, updates: { slug: 'index' } })
   }
 
   const typeBadge = (type: string) => {
@@ -1767,8 +1781,13 @@ function PagesTab({ siteId }: { siteId: string }) {
                   className="border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"
                   onClick={() => setEditingPageId(page.id)}
                 >
-                  <td className="px-4 py-3 font-medium text-gray-900">{page.title}</td>
-                  <td className="px-4 py-3 text-gray-500 font-mono text-xs">/{page.slug}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900 flex items-center gap-2">
+                    {page.slug === 'index' && <Home size={14} className="text-indigo-500 shrink-0" />}
+                    {page.title}
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 font-mono text-xs">
+                    {page.slug === 'index' ? <span className="text-indigo-600 font-semibold">/</span> : `/${page.slug}`}
+                  </td>
                   <td className="px-4 py-3">{typeBadge(page.page_type)}</td>
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${page.is_published ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>
@@ -1777,6 +1796,15 @@ function PagesTab({ siteId }: { siteId: string }) {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      {page.slug !== 'index' && (
+                        <button
+                          onClick={() => handleSetHome(page.id)}
+                          className="p-1.5 hover:bg-indigo-50 text-gray-400 hover:text-indigo-600 rounded-lg transition-colors"
+                          title="Set as Home Page"
+                        >
+                          <Home size={14} />
+                        </button>
+                      )}
                       <button
                         onClick={() => setEditingPageId(page.id)}
                         className="p-1.5 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors"
