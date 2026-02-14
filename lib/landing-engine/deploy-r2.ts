@@ -102,7 +102,7 @@ export async function deployToR2(
  */
 export function prepareBuildFiles(
   buildResult: {
-    pages: { slug: string; html: string; validation: { valid: boolean } }[]
+    pages: { slug: string; html: string; validation: { valid: boolean }; variantKey?: string }[]
     sitemap: string
     robotsTxt: string
     rssFeed: string
@@ -121,9 +121,17 @@ export function prepareBuildFiles(
       html = html.replace('</body>', `${trackingScript}\n</body>`)
     }
 
-    const path = page.slug === 'index'
-      ? 'index.html'
-      : `${page.slug}/index.html`
+    let path: string
+    if (page.variantKey) {
+      // A/B variant pages go under __variant_{key}/ subdirectory
+      path = page.slug === 'index'
+        ? `__variant_${page.variantKey}/index.html`
+        : `${page.slug}/__variant_${page.variantKey}/index.html`
+    } else {
+      path = page.slug === 'index'
+        ? 'index.html'
+        : `${page.slug}/index.html`
+    }
 
     files.push({ path, content: html, contentType: 'text/html; charset=utf-8' })
   }

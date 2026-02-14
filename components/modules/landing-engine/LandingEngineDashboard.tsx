@@ -22,6 +22,13 @@ import {
   BarChart3,
   Settings,
   Link2,
+  FileText,
+  Pencil,
+  FlaskConical,
+  SlidersHorizontal,
+  Play,
+  Pause,
+  Trophy,
 } from 'lucide-react'
 import {
   useLandingSites,
@@ -31,12 +38,25 @@ import {
   useDeleteLandingSite,
   useBuildSite,
   useUpdateSiteInfra,
+  useLandingPages,
+  useCreateLandingPage,
+  useDeleteLandingPage,
+  useLandingTemplates,
+  useSeedTemplates,
+  useExperiments,
+  useCreateExperiment,
+  useDeleteExperiment,
+  useUpdateExperiment,
 } from '@/hooks/useLandingEngine'
 import PulseAnalytics from '@/components/modules/conversion-lab/PulseAnalytics'
+import LandingPageEditor from './LandingPageEditor'
+import VariantEditor from './VariantEditor'
+import ExperimentStats from './ExperimentStats'
+import EdgeRulesEditor from './EdgeRulesEditor'
 
 // ====== Types ======
 
-type Tab = 'general' | 'domain' | 'deploy' | 'analytics'
+type Tab = 'general' | 'pages' | 'domain' | 'deploy' | 'analytics' | 'experiments' | 'edge'
 
 interface Props {
   onBack?: () => void
@@ -109,6 +129,13 @@ function CopyButton({ text }: { text: string }) {
 
 // ====== Create Site Modal ======
 
+// Template preview colors for gallery cards
+const TEMPLATE_PREVIEWS: Record<string, { gradient: string; icon: string; accent: string }> = {
+  'clean-blog': { gradient: 'from-white to-gray-50', icon: 'Aa', accent: '#e94560' },
+  'product-launch': { gradient: 'from-indigo-50 to-white', icon: 'PL', accent: '#6366f1' },
+  'agency-landing': { gradient: 'from-gray-900 to-gray-800', icon: 'AG', accent: '#f59e0b' },
+}
+
 function CreateSiteModal({
   onClose,
   onCreate,
@@ -119,18 +146,21 @@ function CreateSiteModal({
   isCreating: boolean
 }) {
   const [name, setName] = useState('')
-  const [templateId, setTemplateId] = useState('')
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null)
+  const { data: templates = [], isLoading: templatesLoading } = useLandingTemplates()
+  const seedTemplates = useSeedTemplates()
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center">
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 max-w-md w-full mx-4">
+      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 max-w-2xl w-full mx-4 max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <h2 className="text-lg font-bold text-gray-900">Create Landing Site</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
             <X size={18} className="text-gray-400" />
           </button>
         </div>
-        <div className="p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {/* Site Name */}
           <div>
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
               Site Name
@@ -144,17 +174,76 @@ function CreateSiteModal({
               autoFocus
             />
           </div>
+
+          {/* Template Gallery */}
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
-              Template ID (optional)
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-3">
+              Choose Template
             </label>
-            <input
-              type="text"
-              value={templateId}
-              onChange={(e) => setTemplateId(e.target.value)}
-              placeholder="e.g. template-uuid"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            />
+            {templatesLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 size={20} className="animate-spin text-gray-300" />
+              </div>
+            ) : templates.length === 0 ? (
+              <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                <p className="text-sm text-gray-500">No templates available</p>
+                <p className="text-xs text-gray-400 mt-1">Click below to load built-in templates</p>
+                <button
+                  onClick={() => seedTemplates.mutate()}
+                  disabled={seedTemplates.isPending}
+                  className="mt-3 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
+                >
+                  {seedTemplates.isPending ? 'Loading...' : 'Load Built-in Templates'}
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                {templates.map((tpl: any) => {
+                  const preview = TEMPLATE_PREVIEWS[tpl.slug] || { gradient: 'from-gray-50 to-white', icon: tpl.name.substring(0, 2), accent: '#6366f1' }
+                  const isSelected = selectedTemplateId === tpl.id
+                  const isDark = tpl.slug === 'agency-landing'
+                  return (
+                    <button
+                      key={tpl.id}
+                      onClick={() => setSelectedTemplateId(isSelected ? null : tpl.id)}
+                      className={`text-left rounded-xl border-2 overflow-hidden transition-all ${
+                        isSelected
+                          ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-lg'
+                          : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
+                      }`}
+                    >
+                      {/* Preview card */}
+                      <div className={`bg-gradient-to-br ${preview.gradient} p-4 h-28 flex flex-col justify-between`}>
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+                            isDark ? 'text-black' : 'text-white'
+                          }`}
+                          style={{ background: preview.accent }}
+                        >
+                          {preview.icon}
+                        </div>
+                        <div className="space-y-1">
+                          <div className={`h-1.5 rounded-full w-3/4 ${isDark ? 'bg-gray-600' : 'bg-gray-200'}`} />
+                          <div className={`h-1 rounded-full w-1/2 ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`} />
+                        </div>
+                      </div>
+                      {/* Info */}
+                      <div className="p-3">
+                        <div className="text-sm font-semibold text-gray-900">{tpl.name}</div>
+                        <div className="text-xs text-gray-400 mt-0.5 line-clamp-2">
+                          {tpl.description || 'Landing page template'}
+                        </div>
+                        {tpl.is_builtin && (
+                          <span className="inline-block mt-1.5 text-[10px] font-medium bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">
+                            Built-in
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
@@ -165,7 +254,7 @@ function CreateSiteModal({
             Cancel
           </button>
           <button
-            onClick={() => onCreate({ name: name || 'My Site', template_id: templateId || undefined })}
+            onClick={() => onCreate({ name: name || 'My Site', template_id: selectedTemplateId || undefined })}
             disabled={isCreating}
             className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg shadow-md shadow-indigo-200 disabled:opacity-50 transition-colors flex items-center gap-2"
           >
@@ -859,7 +948,10 @@ export default function LandingEngineDashboard({ onBack }: Props) {
 
   const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: 'general', label: 'General', icon: <Settings size={14} /> },
-    { key: 'domain', label: 'Domain Hub', icon: <Globe size={14} /> },
+    { key: 'pages', label: 'Pages', icon: <FileText size={14} /> },
+    { key: 'experiments', label: 'A/B Tests', icon: <FlaskConical size={14} /> },
+    { key: 'edge', label: 'Edge Rules', icon: <SlidersHorizontal size={14} /> },
+    { key: 'domain', label: 'Domain', icon: <Globe size={14} /> },
     { key: 'deploy', label: 'Deploy', icon: <Cloud size={14} /> },
     { key: 'analytics', label: 'Analytics', icon: <BarChart3 size={14} /> },
   ]
@@ -1050,6 +1142,9 @@ export default function LandingEngineDashboard({ onBack }: Props) {
                     isSaving={updateSite.isPending}
                   />
                 )}
+                {activeTab === 'pages' && (
+                  <PagesTab siteId={selectedSiteId} />
+                )}
                 {activeTab === 'domain' && (
                   <DomainHubTab
                     site={selectedSite}
@@ -1065,6 +1160,17 @@ export default function LandingEngineDashboard({ onBack }: Props) {
                     isSavingInfra={updateInfra.isPending}
                     isBuilding={buildSite.isPending}
                     buildResult={buildResult}
+                  />
+                )}
+                {activeTab === 'experiments' && (
+                  <ExperimentsTab siteId={selectedSiteId} />
+                )}
+                {activeTab === 'edge' && (
+                  <EdgeTab
+                    siteId={selectedSiteId}
+                    edgeRules={selectedSite.edge_rules || []}
+                    onSave={(rules) => handleUpdateInfra({ edge_rules: rules })}
+                    isSaving={updateInfra.isPending}
                   />
                 )}
                 {activeTab === 'analytics' && (
@@ -1093,5 +1199,464 @@ export default function LandingEngineDashboard({ onBack }: Props) {
         />
       )}
     </div>
+  )
+}
+
+// ====== Pages Tab ======
+
+function PagesTab({ siteId }: { siteId: string }) {
+  const { data: pages = [], isLoading } = useLandingPages(siteId)
+  const createPage = useCreateLandingPage()
+  const deletePage = useDeleteLandingPage()
+  const [editingPageId, setEditingPageId] = useState<string | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [newSlug, setNewSlug] = useState('')
+  const [newType, setNewType] = useState<'post' | 'page'>('post')
+
+  const handleCreate = async () => {
+    if (!newTitle.trim()) return
+    const slug = newSlug.trim() || newTitle.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    const result = await createPage.mutateAsync({
+      siteId,
+      page: { title: newTitle.trim(), slug, page_type: newType },
+    })
+    setShowCreate(false)
+    setNewTitle('')
+    setNewSlug('')
+    setNewType('post')
+    if (result?.id) setEditingPageId(result.id)
+  }
+
+  const handleDelete = async (pageId: string) => {
+    if (!confirm('Delete this page? This cannot be undone.')) return
+    await deletePage.mutateAsync({ siteId, pageId })
+  }
+
+  const typeBadge = (type: string) => {
+    const styles: Record<string, string> = {
+      post: 'bg-blue-50 text-blue-600',
+      page: 'bg-purple-50 text-purple-600',
+      category: 'bg-amber-50 text-amber-600',
+    }
+    return (
+      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${styles[type] || 'bg-gray-100 text-gray-500'}`}>
+        {type.charAt(0).toUpperCase() + type.slice(1)}
+      </span>
+    )
+  }
+
+  if (editingPageId) {
+    return <LandingPageEditor siteId={siteId} pageId={editingPageId} onClose={() => setEditingPageId(null)} />
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 size={24} className="animate-spin text-gray-300" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-900">Pages ({pages.length})</h3>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200"
+        >
+          <Plus size={16} />
+          Create Page
+        </button>
+      </div>
+
+      {/* Create modal */}
+      {showCreate && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Title</label>
+              <input
+                type="text"
+                value={newTitle}
+                onChange={(e) => {
+                  setNewTitle(e.target.value)
+                  if (!newSlug) setNewSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
+                }}
+                placeholder="Page title"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Slug</label>
+              <input
+                type="text"
+                value={newSlug}
+                onChange={(e) => setNewSlug(e.target.value)}
+                placeholder="page-slug"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Type</label>
+            <div className="flex gap-2">
+              {(['post', 'page'] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setNewType(t)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
+                    newType === t
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200'
+                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+            <button
+              onClick={handleCreate}
+              disabled={createPage.isPending || !newTitle.trim()}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {createPage.isPending && <Loader2 size={14} className="animate-spin" />}
+              Create
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Pages table */}
+      {pages.length === 0 ? (
+        <div className="text-center py-16">
+          <FileText size={40} className="mx-auto mb-3 text-gray-200" />
+          <h3 className="text-gray-500 font-medium">No pages yet</h3>
+          <p className="text-sm text-gray-400 mt-1">Create your first landing page</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/50">
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Title</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Slug</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pages.map((page: any) => (
+                <tr
+                  key={page.id}
+                  className="border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"
+                  onClick={() => setEditingPageId(page.id)}
+                >
+                  <td className="px-4 py-3 font-medium text-gray-900">{page.title}</td>
+                  <td className="px-4 py-3 text-gray-500 font-mono text-xs">/{page.slug}</td>
+                  <td className="px-4 py-3">{typeBadge(page.page_type)}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${page.is_published ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>
+                      {page.is_published ? 'Published' : 'Draft'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => setEditingPageId(page.id)}
+                        className="p-1.5 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors"
+                        title="Edit"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(page.id)}
+                        className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ====== Experiments Tab ======
+
+function ExperimentsTab({ siteId }: { siteId: string }) {
+  const { data: experiments = [], isLoading } = useExperiments(siteId)
+  const { data: pages = [] } = useLandingPages(siteId)
+  const createExperiment = useCreateExperiment()
+  const deleteExperiment = useDeleteExperiment()
+  const updateExperiment = useUpdateExperiment()
+  const [viewingExperimentId, setViewingExperimentId] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'variants' | 'stats'>('variants')
+  const [showCreate, setShowCreate] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newPageId, setNewPageId] = useState('')
+
+  const handleCreate = async () => {
+    if (!newName.trim() || !newPageId) return
+    await createExperiment.mutateAsync({
+      siteId,
+      experiment: { name: newName.trim(), landing_page_id: newPageId },
+    })
+    setShowCreate(false)
+    setNewName('')
+    setNewPageId('')
+  }
+
+  const handleDelete = async (experimentId: string) => {
+    if (!confirm('Delete this experiment and all its variants?')) return
+    await deleteExperiment.mutateAsync({ siteId, experimentId })
+  }
+
+  const handleToggleStatus = async (exp: any) => {
+    const nextStatus = exp.status === 'running' ? 'paused' : 'running'
+    await updateExperiment.mutateAsync({
+      siteId,
+      experimentId: exp.id,
+      updates: { status: nextStatus },
+    })
+  }
+
+  // Sub-view: VariantEditor or ExperimentStats
+  if (viewingExperimentId) {
+    if (viewMode === 'stats') {
+      return (
+        <div className="space-y-4">
+          <button
+            onClick={() => setViewingExperimentId(null)}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+          >
+            <ChevronLeft size={14} />
+            Back to Experiments
+          </button>
+          <ExperimentStats siteId={siteId} experimentId={viewingExperimentId} />
+        </div>
+      )
+    }
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => setViewingExperimentId(null)}
+          className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+        >
+          <ChevronLeft size={14} />
+          Back to Experiments
+        </button>
+        <VariantEditor siteId={siteId} experimentId={viewingExperimentId} onClose={() => setViewingExperimentId(null)} />
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 size={24} className="animate-spin text-gray-300" />
+      </div>
+    )
+  }
+
+  const expStatusBadge = (status: string) => {
+    switch (status) {
+      case 'running':
+        return { bg: 'bg-emerald-50', text: 'text-emerald-700', label: 'Running' }
+      case 'paused':
+        return { bg: 'bg-amber-50', text: 'text-amber-700', label: 'Paused' }
+      case 'completed':
+        return { bg: 'bg-blue-50', text: 'text-blue-700', label: 'Completed' }
+      default:
+        return { bg: 'bg-gray-100', text: 'text-gray-500', label: 'Draft' }
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-900">
+          A/B Experiments ({experiments.length})
+        </h3>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200"
+        >
+          <Plus size={16} />
+          New Experiment
+        </button>
+      </div>
+
+      {/* Create form */}
+      {showCreate && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+              Experiment Name
+            </label>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Homepage CTA test"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+              Page
+            </label>
+            <select
+              value={newPageId}
+              onChange={(e) => setNewPageId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+            >
+              <option value="">Select a page...</option>
+              {pages.map((p: any) => (
+                <option key={p.id} value={p.id}>
+                  {p.title} (/{p.slug})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={() => { setShowCreate(false); setNewName(''); setNewPageId('') }}
+              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleCreate}
+              disabled={createExperiment.isPending || !newName.trim() || !newPageId}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {createExperiment.isPending && <Loader2 size={14} className="animate-spin" />}
+              Create
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Experiments list */}
+      {experiments.length === 0 ? (
+        <div className="text-center py-16">
+          <FlaskConical size={40} className="mx-auto mb-3 text-gray-200" />
+          <h3 className="text-gray-500 font-medium">No experiments yet</h3>
+          <p className="text-sm text-gray-400 mt-1">
+            Create an A/B test to optimize your landing pages
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {experiments.map((exp: any) => {
+            const badge = expStatusBadge(exp.status)
+            const page = pages.find((p: any) => p.id === exp.landing_page_id)
+            return (
+              <div
+                key={exp.id}
+                className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-semibold text-gray-900 truncate">
+                        {exp.name}
+                      </h4>
+                      <span className={`${badge.bg} ${badge.text} px-2 py-0.5 rounded-full text-xs font-medium`}>
+                        {badge.label}
+                      </span>
+                    </div>
+                    {page && (
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Page: {page.title} (/{page.slug})
+                      </p>
+                    )}
+                    {exp.winner_variant_key && (
+                      <p className="text-xs text-emerald-600 mt-0.5 flex items-center gap-1">
+                        <Trophy size={12} />
+                        Winner: Variant {exp.winner_variant_key.toUpperCase()}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 ml-3">
+                    {exp.status !== 'completed' && (
+                      <button
+                        onClick={() => handleToggleStatus(exp)}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          exp.status === 'running'
+                            ? 'hover:bg-amber-50 text-amber-600'
+                            : 'hover:bg-emerald-50 text-emerald-600'
+                        }`}
+                        title={exp.status === 'running' ? 'Pause' : 'Start'}
+                      >
+                        {exp.status === 'running' ? <Pause size={14} /> : <Play size={14} />}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setViewMode('variants'); setViewingExperimentId(exp.id) }}
+                      className="p-1.5 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors"
+                      title="Edit variants"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      onClick={() => { setViewMode('stats'); setViewingExperimentId(exp.id) }}
+                      className="p-1.5 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
+                      title="View stats"
+                    >
+                      <BarChart3 size={14} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(exp.id)}
+                      className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ====== Edge Rules Tab (wrapper) ======
+
+function EdgeTab({
+  siteId,
+  edgeRules,
+  onSave,
+  isSaving,
+}: {
+  siteId: string
+  edgeRules: any[]
+  onSave: (rules: any[]) => void
+  isSaving: boolean
+}) {
+  return (
+    <EdgeRulesEditor
+      siteId={siteId}
+      edgeRules={edgeRules}
+      onSave={onSave}
+      isSaving={isSaving}
+    />
   )
 }

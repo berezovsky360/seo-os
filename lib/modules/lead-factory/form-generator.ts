@@ -4,11 +4,14 @@
 
 export interface FormField {
   name: string
-  type: 'email' | 'text' | 'tel' | 'textarea'
+  type: 'email' | 'text' | 'tel' | 'textarea' | 'select' | 'radio'
   label?: string
   placeholder?: string
   required: boolean
+  options?: { label: string; value: string }[]
 }
+
+export { generateQuizForm, generateCalculatorForm } from './quiz-calculator-generator'
 
 export interface FormConfig {
   formId: string

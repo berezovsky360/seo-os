@@ -36,6 +36,7 @@ export async function PUT(
     'content', 'og_image', 'category', 'tags', 'author_name',
     'word_count', 'reading_time', 'featured_image_url',
     'is_published', 'sort_order', 'published_at',
+    'form_ids', 'form_positions',
   ]
   for (const f of fields) {
     if (body[f] !== undefined) allowed[f] = body[f]

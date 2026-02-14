@@ -16,8 +16,10 @@ export function getTrackingScript(siteId: string, collectEndpoint?: string): str
   sessionStorage.setItem('_sp',sid);
   var ep='${ep}';
   var site='${siteId}';
+  var vm=document.querySelector('meta[name="x-variant"]');
+  var v=vm?vm.getAttribute('content'):null;
   function send(t,d){
-    try{navigator.sendBeacon(ep,JSON.stringify({s:site,sid:sid,t:t,p:location.pathname,r:document.referrer,d:d}))}catch(e){}
+    try{navigator.sendBeacon(ep,JSON.stringify({s:site,sid:sid,t:t,p:location.pathname,r:document.referrer,v:v,d:d}))}catch(e){}
   }
   send('pv');
   var st=Date.now();

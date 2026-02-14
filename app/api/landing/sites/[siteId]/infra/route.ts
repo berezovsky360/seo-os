@@ -17,6 +17,7 @@ const INFRA_FIELDS = [
   'domain_status',
   'domain_dns_records',
   'pulse_enabled',
+  'edge_rules',
 ]
 
 const INFRA_SELECT = INFRA_FIELDS.join(', ')

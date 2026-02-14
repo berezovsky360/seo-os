@@ -32,6 +32,8 @@ export type ModuleId =
   | 'lead-factory'
   | 'conversion-lab'
   | 'landing-engine'
+  | 'funnel-builder'
+  | 'metrico'
 
 // ====== API Key Types ======
 
@@ -159,6 +161,10 @@ export type EventType =
   | 'lab.lead_moved'
   | 'lab.offer_sent'
   | 'lab.popup_triggered'
+  // Funnel Builder events
+  | 'funnel.step_reached'
+  | 'funnel.completed'
+  | 'funnel.abandoned'
 
 // ====== Background Task Types ======
 

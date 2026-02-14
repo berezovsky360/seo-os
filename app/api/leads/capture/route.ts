@@ -28,10 +28,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'form_id and email are required' }, { status: 400 })
   }
 
-  // Look up form to get owner user_id and magnet_id
+  // Look up form to get owner user_id, magnet_id, and config
   const { data: form } = await supabase
     .from('lead_forms')
-    .select('user_id, magnet_id, success_message, redirect_url, landing_site_id')
+    .select('user_id, magnet_id, success_message, redirect_url, landing_site_id, form_type, popup_config')
     .eq('id', form_id)
     .single()
 
@@ -83,6 +83,22 @@ export async function POST(request: NextRequest) {
     .update({ submission_count: (await supabase.from('lead_forms').select('submission_count').eq('id', form_id).single()).data?.submission_count + 1 || 1 })
     .eq('id', form_id)
 
+  // Emit lead.captured event for Funnel Builder + Conversion Lab
+  try {
+    await supabase.from('events_log').insert({
+      user_id: form.user_id,
+      event_type: 'lead.captured',
+      source_module: 'lead-factory',
+      payload: { lead_id: lead.id, form_id, email, landing_site_id: landing_site_id || form.landing_site_id },
+      site_id: null,
+      severity: 'info',
+      status: 'completed',
+      processed_by: [],
+    })
+  } catch {
+    // Event logging failure shouldn't block lead capture
+  }
+
   // Auto-deliver magnet if configured
   if (form.magnet_id) {
     const { data: magnet } = await supabase
@@ -99,6 +115,56 @@ export async function POST(request: NextRequest) {
         // Email delivery failure shouldn't block lead capture
       }
     }
+  }
+
+  // Quiz scoring logic
+  if (form.form_type === 'quiz' && form.popup_config?.scoring?.enabled) {
+    const quizScore = Number(customFields.quiz_score) || 0
+    const quizLabel = customFields.quiz_result_label || ''
+    const redirects = form.popup_config.scoring.redirects || []
+
+    // Find matching redirect rule
+    let redirectUrl = ''
+    for (const rule of redirects) {
+      if (quizScore >= rule.min_score && quizScore <= rule.max_score) {
+        redirectUrl = rule.url
+        break
+      }
+    }
+
+    // Update lead with quiz results
+    await supabase
+      .from('leads')
+      .update({
+        custom_fields: {
+          ...(lead.custom_fields || {}),
+          quiz_score: quizScore,
+          quiz_result_label: quizLabel,
+        },
+      })
+      .eq('id', lead.id)
+
+    return NextResponse.json({
+      ok: true,
+      message: form.success_message || 'Thank you!',
+      lead_id: lead.id,
+      quiz_score: quizScore,
+      quiz_result_label: quizLabel,
+      redirect_url: redirectUrl || undefined,
+    })
+  }
+
+  // Calculator result capture
+  if (form.form_type === 'calculator' && customFields.calculator_result !== undefined) {
+    await supabase
+      .from('leads')
+      .update({
+        custom_fields: {
+          ...(lead.custom_fields || {}),
+          calculator_result: Number(customFields.calculator_result) || 0,
+        },
+      })
+      .eq('id', lead.id)
   }
 
   // Handle redirect (for HTML form submissions)

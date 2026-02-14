@@ -8,6 +8,11 @@ import {
   GripVertical,
   Loader2,
 } from 'lucide-react'
+import QuizBuilder, { DEFAULT_QUIZ_CONFIG, type QuizConfig } from './QuizBuilder'
+import CalculatorBuilder, { DEFAULT_CALC_CONFIG, type CalculatorConfig } from './CalculatorBuilder'
+import VisualCustomizer, { DEFAULT_VISUAL, type VisualConfig } from './VisualCustomizer'
+
+type FormType = 'inline' | 'popup' | 'slide_in' | 'quiz' | 'calculator'
 
 interface FormField {
   name: string
@@ -33,7 +38,7 @@ export default function FormBuilder({ form, magnets, landingSiteId, onSave, onCl
   const isEdit = !!form?.id
 
   const [name, setName] = useState(form?.name || '')
-  const [formType, setFormType] = useState<'inline' | 'popup' | 'slide_in'>(form?.form_type || 'inline')
+  const [formType, setFormType] = useState<FormType>(form?.form_type || 'inline')
   const [fields, setFields] = useState<FormField[]>(
     form?.fields || [{ name: 'email', type: 'email' as const, required: true }]
   )
@@ -46,6 +51,26 @@ export default function FormBuilder({ form, magnets, landingSiteId, onSave, onCl
   )
   const [saving, setSaving] = useState(false)
 
+  // Quiz/Calculator/Visual state
+  const [quizConfig, setQuizConfig] = useState<QuizConfig>(
+    form?.popup_config?.steps ? {
+      steps: form.popup_config.steps,
+      scoring: form.popup_config.scoring || DEFAULT_QUIZ_CONFIG.scoring,
+      collect_email: form.popup_config.collect_email || 'last',
+    } : DEFAULT_QUIZ_CONFIG
+  )
+  const [calcConfig, setCalcConfig] = useState<CalculatorConfig>(
+    form?.popup_config?.inputs ? {
+      inputs: form.popup_config.inputs,
+      formula: form.popup_config.formula || '',
+      result_template: form.popup_config.result_template || 'Result: ${result}',
+      collect_email: form.popup_config.collect_email || 'after_result',
+    } : DEFAULT_CALC_CONFIG
+  )
+  const [visual, setVisual] = useState<VisualConfig>(
+    form?.popup_config?.visual || DEFAULT_VISUAL
+  )
+
   // Sync state when form prop changes
   useEffect(() => {
     if (form) {
@@ -57,6 +82,25 @@ export default function FormBuilder({ form, magnets, landingSiteId, onSave, onCl
       setSuccessMessage(form.success_message || '')
       setActive(form.active !== false)
       setTrigger(form.trigger || { type: 'time_delay', value: 3, show_once: true })
+
+      if (form.popup_config?.steps) {
+        setQuizConfig({
+          steps: form.popup_config.steps,
+          scoring: form.popup_config.scoring || DEFAULT_QUIZ_CONFIG.scoring,
+          collect_email: form.popup_config.collect_email || 'last',
+        })
+      }
+      if (form.popup_config?.inputs) {
+        setCalcConfig({
+          inputs: form.popup_config.inputs,
+          formula: form.popup_config.formula || '',
+          result_template: form.popup_config.result_template || 'Result: ${result}',
+          collect_email: form.popup_config.collect_email || 'after_result',
+        })
+      }
+      if (form.popup_config?.visual) {
+        setVisual(form.popup_config.visual)
+      }
     }
   }, [form])
 
@@ -82,11 +126,36 @@ export default function FormBuilder({ form, magnets, landingSiteId, onSave, onCl
         fields,
         button_text: buttonText || 'Download',
         success_message: successMessage || undefined,
-        active,
+        is_active: active,
       }
       if (magnetId) data.magnet_id = magnetId
-      if (formType === 'popup') data.trigger = trigger
+      if (formType === 'popup') data.popup_config = { trigger: trigger.type, value: trigger.value, show_once: trigger.show_once }
       if (landingSiteId && !isEdit) data.landing_site_id = landingSiteId
+
+      // Build popup_config for quiz/calculator with visual
+      if (formType === 'quiz') {
+        data.popup_config = {
+          visual,
+          steps: quizConfig.steps,
+          scoring: quizConfig.scoring,
+          collect_email: quizConfig.collect_email,
+        }
+      } else if (formType === 'calculator') {
+        data.popup_config = {
+          visual,
+          inputs: calcConfig.inputs,
+          formula: calcConfig.formula,
+          result_template: calcConfig.result_template,
+          collect_email: calcConfig.collect_email,
+        }
+      } else {
+        // For inline/popup/slide_in — store visual if any non-default values set
+        const hasVisual = visual.cover_image || visual.headline || visual.subtitle ||
+          visual.button_color !== '#e94560' || visual.button_text_color !== '#ffffff'
+        if (hasVisual) {
+          data.popup_config = { ...data.popup_config, visual }
+        }
+      }
 
       await onSave(data)
     } catch {
@@ -96,10 +165,12 @@ export default function FormBuilder({ form, magnets, landingSiteId, onSave, onCl
     }
   }
 
-  const formTypeOptions: { value: 'inline' | 'popup' | 'slide_in'; label: string }[] = [
+  const formTypeOptions: { value: FormType; label: string }[] = [
     { value: 'inline', label: 'Inline' },
     { value: 'popup', label: 'Popup' },
     { value: 'slide_in', label: 'Slide-in' },
+    { value: 'quiz', label: 'Quiz' },
+    { value: 'calculator', label: 'Calculator' },
   ]
 
   const fieldTypeOptions: { value: FormField['type']; label: string }[] = [
@@ -109,9 +180,11 @@ export default function FormBuilder({ form, magnets, landingSiteId, onSave, onCl
     { value: 'select', label: 'Select' },
   ]
 
+  const isStandardForm = formType === 'inline' || formType === 'popup' || formType === 'slide_in'
+
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 max-w-2xl w-full max-h-[80vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 max-w-2xl w-full max-h-[85vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <h2 className="text-lg font-bold text-gray-900">
@@ -146,7 +219,7 @@ export default function FormBuilder({ form, magnets, landingSiteId, onSave, onCl
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
               Form Type
             </label>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               {formTypeOptions.map((opt) => (
                 <button
                   key={opt.value}
@@ -163,62 +236,77 @@ export default function FormBuilder({ form, magnets, landingSiteId, onSave, onCl
             </div>
           </div>
 
-          {/* Fields builder */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                Form Fields
-              </label>
-              <button
-                onClick={addField}
-                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium"
-              >
-                <Plus size={14} />
-                Add Field
-              </button>
-            </div>
-            <div className="space-y-2">
-              {fields.map((field, index) => (
-                <div key={index} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2.5 border border-gray-100">
-                  <GripVertical size={14} className="text-gray-300 flex-shrink-0" />
-                  <input
-                    type="text"
-                    value={field.name}
-                    onChange={(e) => updateField(index, { name: e.target.value })}
-                    placeholder="Field name"
-                    className="flex-1 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white"
-                  />
-                  <select
-                    value={field.type}
-                    onChange={(e) => updateField(index, { type: e.target.value as FormField['type'] })}
-                    className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                  >
-                    {fieldTypeOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                  <label className="flex items-center gap-1.5 text-xs text-gray-500 whitespace-nowrap">
+          {/* Standard form fields builder (only for inline/popup/slide_in) */}
+          {isStandardForm && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  Form Fields
+                </label>
+                <button
+                  onClick={addField}
+                  className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+                >
+                  <Plus size={14} />
+                  Add Field
+                </button>
+              </div>
+              <div className="space-y-2">
+                {fields.map((field, index) => (
+                  <div key={index} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2.5 border border-gray-100">
+                    <GripVertical size={14} className="text-gray-300 flex-shrink-0" />
                     <input
-                      type="checkbox"
-                      checked={field.required}
-                      onChange={(e) => updateField(index, { required: e.target.checked })}
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      type="text"
+                      value={field.name}
+                      onChange={(e) => updateField(index, { name: e.target.value })}
+                      placeholder="Field name"
+                      className="flex-1 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white"
                     />
-                    Required
-                  </label>
-                  <button
-                    onClick={() => removeField(index)}
-                    className="p-1 hover:bg-red-50 text-red-400 hover:text-red-600 rounded transition-colors flex-shrink-0"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-              {fields.length === 0 && (
-                <p className="text-sm text-gray-400 text-center py-3">No fields. Click &quot;Add Field&quot; above.</p>
-              )}
+                    <select
+                      value={field.type}
+                      onChange={(e) => updateField(index, { type: e.target.value as FormField['type'] })}
+                      className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                    >
+                      {fieldTypeOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                    <label className="flex items-center gap-1.5 text-xs text-gray-500 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={field.required}
+                        onChange={(e) => updateField(index, { required: e.target.checked })}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      Required
+                    </label>
+                    <button
+                      onClick={() => removeField(index)}
+                      className="p-1 hover:bg-red-50 text-red-400 hover:text-red-600 rounded transition-colors flex-shrink-0"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+                {fields.length === 0 && (
+                  <p className="text-sm text-gray-400 text-center py-3">No fields. Click &quot;Add Field&quot; above.</p>
+                )}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Quiz Builder */}
+          {formType === 'quiz' && (
+            <QuizBuilder value={quizConfig} onChange={setQuizConfig} />
+          )}
+
+          {/* Calculator Builder */}
+          {formType === 'calculator' && (
+            <CalculatorBuilder value={calcConfig} onChange={setCalcConfig} />
+          )}
+
+          {/* Visual Customizer — for all types */}
+          <VisualCustomizer value={visual} onChange={setVisual} />
 
           {/* Linked Magnet */}
           <div>

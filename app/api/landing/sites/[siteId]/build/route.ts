@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { buildSite, type LandingTemplate, type LandingSite, type LandingPage } from '@/lib/landing-engine/builder'
+import { buildSite, type LandingTemplate, type LandingSite, type BuildPageInput } from '@/lib/landing-engine/builder'
 import { deployToR2, prepareBuildFiles, type R2Config } from '@/lib/landing-engine/deploy-r2'
 import { getTrackingScript } from '@/lib/landing-engine/tracking-script'
+import { getWorkerScript, type ABExperiment, type EdgeRule } from '@/lib/landing-engine/worker-template'
+import { generateInlineForm, generatePopupForm, type FormConfig, type PopupConfig } from '@/lib/modules/lead-factory/form-generator'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -41,7 +43,53 @@ export async function POST(
     return NextResponse.json({ error: pagesErr.message }, { status: 500 })
   }
 
-  // 3. Build
+  // 3. Collect all form IDs referenced by pages
+  const allFormIds = new Set<string>()
+  for (const page of (pageRows || [])) {
+    if (page.form_ids && Array.isArray(page.form_ids)) {
+      page.form_ids.forEach((id: string) => allFormIds.add(id))
+    }
+  }
+
+  // 4. Fetch form configs in bulk
+  let formMap: Record<string, any> = {}
+  if (allFormIds.size > 0) {
+    const { data: forms } = await supabase
+      .from('lead_forms')
+      .select('*')
+      .in('id', Array.from(allFormIds))
+
+    for (const f of (forms || [])) {
+      formMap[f.id] = f
+    }
+  }
+
+  // 5. Fetch A/B variants for all pages
+  const pageIds = (pageRows || []).map((p: any) => p.id)
+  let variantMap: Record<string, any[]> = {}
+  if (pageIds.length > 0) {
+    const { data: variants } = await supabase
+      .from('landing_page_variants')
+      .select('*')
+      .in('landing_page_id', pageIds)
+
+    for (const v of (variants || [])) {
+      if (!variantMap[v.landing_page_id]) variantMap[v.landing_page_id] = []
+      variantMap[v.landing_page_id].push(v)
+    }
+  }
+
+  // 6. Fetch running experiments
+  const { data: experiments } = await supabase
+    .from('landing_experiments')
+    .select('*')
+    .eq('landing_site_id', siteId)
+    .eq('status', 'running')
+
+  // 7. Build capture URL
+  const captureUrl = '/api/leads/capture'
+
+  // 8. Prepare build input with forms and variants
   const template: LandingTemplate = {
     layouts: templateRow.layouts as Record<string, string>,
     partials: templateRow.partials as Record<string, string>,
@@ -60,12 +108,74 @@ export async function POST(
     analytics_id: siteRow.analytics_id,
   }
 
-  const pages = (pageRows || []) as LandingPage[]
+  const pages: BuildPageInput[] = (pageRows || []).map((page: any) => {
+    // Generate form HTML for each referenced form
+    const formEmbeds: BuildPageInput['forms'] = []
+    const positions = page.form_positions || []
+
+    if (page.form_ids && Array.isArray(page.form_ids)) {
+      for (const formId of page.form_ids) {
+        const form = formMap[formId]
+        if (!form) continue
+
+        const pos = positions.find((p: any) => p.form_id === formId) || { position: 'after_content' }
+        const formCfg: FormConfig = {
+          formId: form.id,
+          captureUrl,
+          landingSiteId: siteId,
+          fields: form.fields || [{ name: 'email', type: 'email', label: 'Email', placeholder: 'Your email', required: true }],
+          buttonText: form.button_text || 'Submit',
+          successMessage: form.success_message || 'Thank you!',
+        }
+
+        let formHtml: string
+        if (form.form_type === 'popup' && form.popup_config) {
+          const popupCfg: PopupConfig = {
+            trigger: form.popup_config.trigger || 'time_delay',
+            value: form.popup_config.value || 5,
+            showOnce: form.popup_config.show_once !== false,
+            headline: form.popup_config.headline || form.name,
+            description: form.popup_config.description || '',
+          }
+          formHtml = generatePopupForm(formCfg, popupCfg)
+        } else {
+          formHtml = generateInlineForm(formCfg)
+        }
+
+        formEmbeds.push({
+          form_id: formId,
+          position: pos.position || 'after_content',
+          placeholder_id: pos.placeholder_id,
+          form_html: formHtml,
+        })
+      }
+    }
+
+    // Map variants
+    const pageVariants = variantMap[page.id] || []
+
+    return {
+      ...page,
+      forms: formEmbeds.length > 0 ? formEmbeds : undefined,
+      variants: pageVariants.length > 0 ? pageVariants.map((v: any) => ({
+        variant_key: v.variant_key,
+        content: v.content,
+        title: v.title,
+        seo_title: v.seo_title,
+        seo_description: v.seo_description,
+        weight: v.weight || 50,
+        is_control: v.is_control || false,
+      })) : undefined,
+    }
+  })
+
   const result = buildSite(template, site, pages)
 
-  // 4. Save rendered HTML back to each page
+  // 9. Save rendered HTML back to each page (control variants only)
   const errors: string[] = []
   for (const built of result.pages) {
+    if (built.variantKey) continue // don't save variant HTML to pages table
+
     if (!built.validation.valid) {
       errors.push(`Page "${built.slug}": ${built.validation.issues.filter(i => i.severity === 'error').map(i => i.message).join('; ')}`)
       continue
@@ -79,7 +189,7 @@ export async function POST(
     if (updateErr) errors.push(`Failed to save ${built.slug}: ${updateErr.message}`)
   }
 
-  // 5. Deploy to R2 (if configured)
+  // 10. Deploy to R2 (if configured)
   let deploy: { uploaded: number; skipped: number; errors: string[] } | null = null
 
   if (siteRow.r2_bucket && siteRow.r2_endpoint && siteRow.r2_access_key_encrypted && siteRow.r2_secret_key_encrypted) {
@@ -90,7 +200,6 @@ export async function POST(
       bucketName: siteRow.r2_bucket,
     }
 
-    // Build tracking script if pulse is enabled
     const trackingScript = siteRow.pulse_enabled !== false
       ? getTrackingScript(siteId)
       : undefined
@@ -108,10 +217,37 @@ export async function POST(
     }
   }
 
-  // 6. Update last_built_at
+  // 11. Generate Worker script with A/B + edge rules config
+  const abExperiments: ABExperiment[] = (experiments || []).map((exp: any) => {
+    const page = (pageRows || []).find((p: any) => p.id === exp.landing_page_id)
+    const pageVariants = variantMap[exp.landing_page_id] || []
+    return {
+      pageSlug: page?.slug || '',
+      variants: pageVariants.map((v: any) => ({
+        key: v.variant_key.toLowerCase(),
+        weight: v.weight || 50,
+      })),
+    }
+  }).filter((e: ABExperiment) => e.pageSlug && e.variants.length > 0)
+
+  const edgeRules: EdgeRule[] = siteRow.edge_rules || []
+
+  const siteSlugForWorker = siteRow.subdomain || siteRow.domain || siteId
+  const workerScript = getWorkerScript({
+    r2BucketBinding: siteSlugForWorker,
+    collectEndpoint: '/api/pulse/collect',
+    siteId,
+    experiments: abExperiments,
+    edgeRules,
+  })
+
+  // 12. Update last_built_at + store worker script
   await supabase
     .from('landing_sites')
-    .update({ last_built_at: new Date().toISOString() })
+    .update({
+      last_built_at: new Date().toISOString(),
+      worker_script: workerScript,
+    })
     .eq('id', siteId)
 
   return NextResponse.json({
@@ -121,9 +257,12 @@ export async function POST(
       slug: p.slug,
       valid: p.validation.valid,
       issues: p.validation.issues,
+      variantKey: p.variantKey,
     })),
     sitemap_length: result.sitemap.length,
     rss_length: result.rssFeed.length,
     deploy: deploy ? { uploaded: deploy.uploaded, skipped: deploy.skipped } : null,
+    experiments_configured: abExperiments.length,
+    edge_rules_configured: edgeRules.filter(r => r.enabled).length,
   })
 }

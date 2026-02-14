@@ -32,6 +32,8 @@ export const DASHBOARD_ROUTES: Record<string, string> = {
   'lead-factory': '/dashboard/lead-factory',
   'conversion-lab': '/dashboard/conversion-lab',
   'landing-engine': '/dashboard/landing-engine',
+  'funnel-builder': '/dashboard/funnel-builder',
+  'metrico': '/dashboard/metrico',
 }
 
 export function getRouteForView(view: string, siteId?: string): string {

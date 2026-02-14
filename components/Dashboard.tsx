@@ -8,7 +8,7 @@ import {
   TrendingUp, Settings, ExternalLink, Calendar, Wifi, WifiOff,
   RefreshCw, Loader2, Globe, BarChart3, Image as ImageIcon, BookOpen, Users, Bot,
   Database, Wand2, Timer, Rss, Send, Palette, Swords, GripVertical, Microscope, Rocket,
-  Magnet, FlaskConical
+  Magnet, FlaskConical, GitBranch, LayoutDashboard
 } from 'lucide-react';
 import { THEMES, THEME_COLORS } from '../constants';
 import AddSiteModal from './AddSiteModal';
@@ -91,6 +91,8 @@ const MODULE_NAV: { id: string; name: string; icon: React.ReactNode; iconBg: str
   { id: 'lead-factory', name: 'Lead Factory', icon: <Magnet size={18} />, iconBg: 'bg-rose-50 text-rose-600', viewState: 'lead-factory' },
   { id: 'conversion-lab', name: 'Conversion Lab', icon: <FlaskConical size={18} />, iconBg: 'bg-fuchsia-50 text-fuchsia-600', viewState: 'conversion-lab' },
   { id: 'landing-engine', name: 'Landing Engine', icon: <Rocket size={18} />, iconBg: 'bg-indigo-50 text-indigo-600', viewState: 'landing-engine' },
+  { id: 'funnel-builder', name: 'Funnel Builder', icon: <GitBranch size={18} />, iconBg: 'bg-violet-50 text-violet-600', viewState: 'funnel-builder' },
+  { id: 'metrico', name: 'Metrico', icon: <LayoutDashboard size={18} />, iconBg: 'bg-indigo-50 text-indigo-600', viewState: 'metrico' },
 ];
 
 // Helper: check if a site has CMS credentials

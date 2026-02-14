@@ -49,8 +49,38 @@ export interface LandingPage {
   modified_at: string | null
 }
 
+export interface FormEmbed {
+  form_id: string
+  position: 'after_content' | 'placeholder'
+  placeholder_id?: string
+  form_html: string
+}
+
+export interface PageVariant {
+  variant_key: string
+  content: string | null
+  title: string | null
+  seo_title: string | null
+  seo_description: string | null
+  weight: number
+  is_control: boolean
+}
+
+export interface BuildPageInput extends LandingPage {
+  forms?: FormEmbed[]
+  variants?: PageVariant[]
+}
+
+export interface BuildResultPage {
+  pageId: string
+  slug: string
+  html: string
+  validation: ValidationResult
+  variantKey?: string
+}
+
 export interface BuildResult {
-  pages: { pageId: string; slug: string; html: string; validation: ValidationResult }[]
+  pages: BuildResultPage[]
   sitemap: string
   robotsTxt: string
   rssFeed: string
@@ -101,10 +131,26 @@ function excerpt(content: string | null, maxLen = 160): string {
   return plain.length > maxLen ? plain.substring(0, maxLen) + '...' : plain
 }
 
+// Inject lead forms into page content
+function injectForms(content: string, forms: FormEmbed[]): string {
+  let result = content
+  for (const form of forms) {
+    if (form.position === 'placeholder' && form.placeholder_id) {
+      result = result.replace(`{{FORM:${form.placeholder_id}}}`, form.form_html)
+    }
+  }
+  // Append after_content forms at the end
+  const afterForms = forms.filter(f => f.position === 'after_content')
+  if (afterForms.length > 0) {
+    result += '\n' + afterForms.map(f => f.form_html).join('\n')
+  }
+  return result
+}
+
 export function buildSite(
   template: LandingTemplate,
   site: LandingSite,
-  pages: LandingPage[],
+  pages: BuildPageInput[],
 ): BuildResult {
   const siteUrl = getSiteUrl(site)
   const year = new Date().getFullYear().toString()
@@ -130,7 +176,8 @@ export function buildSite(
     critical_css: css,
   }
 
-  const results: BuildResult['pages'] = []
+  const results: BuildResultPage[] = []
+  const hasFormScripts = pages.some(p => p.forms && p.forms.length > 0)
 
   // Build individual pages
   for (const page of publishedPages) {
@@ -169,6 +216,12 @@ export function buildSite(
       articleSection: page.category || undefined,
     }) : ''
 
+    // Inject lead forms into content
+    let pageContent = page.content || ''
+    if (page.forms && page.forms.length > 0) {
+      pageContent = injectForms(pageContent, page.forms)
+    }
+
     const pageData = {
       ...globalData,
       title: page.title,
@@ -178,7 +231,7 @@ export function buildSite(
       og_title: page.seo_title || page.title,
       og_description: page.seo_description || excerpt(page.content),
       og_image: page.og_image || page.featured_image_url || '',
-      content: page.content || '',
+      content: pageContent,
       author_name: page.author_name || '',
       iso_date: toISODate(page.published_at),
       formatted_date: formatDate(page.published_at),
@@ -213,9 +266,45 @@ export function buildSite(
 
     const layoutTemplate = template.layouts[layoutKey] || template.layouts.page || ''
     const html = render(layoutTemplate, pageData, template.partials)
-    const validation = validate(html)
+    const validation = validate(html, undefined, hasFormScripts)
 
     results.push({ pageId: page.id, slug: page.slug, html, validation })
+
+    // Build A/B variants (separate HTML files per variant)
+    if (page.variants && page.variants.length > 0) {
+      for (const variant of page.variants) {
+        if (variant.is_control) continue
+
+        let variantContent = pageContent
+        if (variant.content != null) {
+          variantContent = variant.content
+          if (page.forms && page.forms.length > 0) {
+            variantContent = injectForms(variantContent, page.forms)
+          }
+        }
+
+        const variantData = {
+          ...pageData,
+          title: variant.title || pageData.title,
+          seo_title: variant.seo_title || pageData.seo_title,
+          seo_description: variant.seo_description || pageData.seo_description,
+          og_title: variant.seo_title || pageData.og_title,
+          og_description: variant.seo_description || pageData.og_description,
+          content: variantContent,
+        }
+
+        const variantHtml = render(layoutTemplate, variantData, template.partials)
+        const variantValidation = validate(variantHtml, undefined, hasFormScripts)
+
+        results.push({
+          pageId: page.id,
+          slug: page.slug,
+          html: variantHtml,
+          validation: variantValidation,
+          variantKey: variant.variant_key.toLowerCase(),
+        })
+      }
+    }
   }
 
   // Sitemap

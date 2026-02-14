@@ -31,6 +31,8 @@ import { CompetitorAnatomyModule } from '@/lib/modules/competitor-anatomy'
 import { AnyChatModule } from '@/lib/modules/any-chat'
 import { LeadFactoryModule } from '@/lib/modules/lead-factory'
 import { ConversionLabModule } from '@/lib/modules/conversion-lab'
+import { FunnelBuilderModule } from '@/lib/modules/funnel-builder'
+import { MetricoModule } from '@/lib/modules/metrico'
 
 export const MODULE_REGISTRY: Record<string, SEOModule> = {
   'rankmath-bridge': new RankMathBridgeModule(),
@@ -55,6 +57,9 @@ export const MODULE_REGISTRY: Record<string, SEOModule> = {
   // Growth modules
   'lead-factory': new LeadFactoryModule(),
   'conversion-lab': new ConversionLabModule(),
+  'funnel-builder': new FunnelBuilderModule(),
+  // Analytics modules
+  'metrico': new MetricoModule(),
 }
 
 /**

@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-export async function GET(request: NextRequest) {
-  const userId = request.headers.get('x-user-id')
+async function getUserId(): Promise<string | null> {
+  const authClient = await createServerClient()
+  const { data: { user } } = await authClient.auth.getUser()
+  return user?.id || null
+}
+
+export async function GET() {
+  const userId = await getUserId()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data, error } = await supabase
@@ -21,14 +28,14 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const userId = request.headers.get('x-user-id')
+  const userId = await getUserId()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
 
   const allowed: Record<string, any> = {
     user_id: userId,
-    template_id: body.template_id,
+    template_id: body.template_id || null,
     name: body.name || 'My Site',
     domain: body.domain || null,
     subdomain: body.subdomain || null,

@@ -16,7 +16,7 @@ export interface ValidationResult {
 
 type Rules = typeof seoRules
 
-export function validate(html: string, rules: Rules = seoRules): ValidationResult {
+export function validate(html: string, rules: Rules = seoRules, allowFormScripts = false): ValidationResult {
   const issues: ValidationIssue[] = []
 
   // Heading rules
@@ -101,9 +101,13 @@ export function validate(html: string, rules: Rules = seoRules): ValidationResul
   }
 
   if (rules.performance_rules.zero_js) {
-    // Allow JSON-LD scripts but flag any other JS
+    // Allow JSON-LD scripts and Lead Factory form scripts (popup, quiz, calculator)
     const scripts = html.match(/<script[\s>][\s\S]*?<\/script>/gi) || []
-    const jsScripts = scripts.filter(s => !/type=["']application\/ld\+json["']/i.test(s))
+    const jsScripts = scripts.filter(s => {
+      if (/type=["']application\/ld\+json["']/i.test(s)) return false
+      if (allowFormScripts && /lf-popup|lf-quiz|lf-calc|lfQuizNav|lfCalcUpdate/i.test(s)) return false
+      return true
+    })
     if (jsScripts.length > 0) {
       issues.push({
         severity: 'error',

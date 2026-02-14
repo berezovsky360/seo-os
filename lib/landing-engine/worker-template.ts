@@ -1,7 +1,18 @@
 // Cloudflare Worker template for serving landing sites from R2.
 // Placeholders are replaced at deploy time by deploy-r2.ts.
 // The worker serves static HTML/CSS/JS from R2, injects Ghost Popup
-// scripts into HTML responses, and forwards analytics via Silent Pulse.
+// scripts into HTML responses, handles A/B testing, and edge customization.
+
+export interface ABExperiment {
+  pageSlug: string
+  variants: { key: string; weight: number }[]
+}
+
+export interface EdgeRule {
+  type: 'utm_persist' | 'geo_swap' | 'referrer_swap' | 'utm_swap'
+  enabled: boolean
+  rules?: { match: string; field: string; value: string }[]
+}
 
 export interface WorkerConfig {
   /** R2 key prefix (typically the site slug, e.g. "my-landing-site") */
@@ -12,6 +23,10 @@ export interface WorkerConfig {
   siteId: string
   /** Optional origin to proxy to when R2 misses (e.g. for draft previews) */
   fallbackOrigin?: string
+  /** A/B experiments config */
+  experiments?: ABExperiment[]
+  /** Edge customization rules */
+  edgeRules?: EdgeRule[]
 }
 
 /**
@@ -20,10 +35,11 @@ export interface WorkerConfig {
  *
  * The worker:
  * 1. Resolves the request path to an R2 object key under the site prefix.
- * 2. Serves the object with correct Content-Type and caching headers.
- * 3. For HTML pages, injects a Ghost Popup loader before </body>.
- * 4. Returns a custom 404 page if one exists, otherwise a plain 404.
- * 5. Optionally falls back to an origin server when R2 has no match.
+ * 2. Handles A/B test variant routing via cookie-based assignment.
+ * 3. Serves the object with correct Content-Type and caching headers.
+ * 4. For HTML pages, injects Ghost Popup loader, variant meta tag, and edge rules.
+ * 5. Returns a custom 404 page if one exists, otherwise a plain 404.
+ * 6. Optionally falls back to an origin server when R2 has no match.
  */
 export function getWorkerScript(config: WorkerConfig): string {
   const {
@@ -31,6 +47,8 @@ export function getWorkerScript(config: WorkerConfig): string {
     collectEndpoint,
     siteId,
     fallbackOrigin,
+    experiments = [],
+    edgeRules = [],
   } = config
 
   // Derive the popup endpoint from the collect endpoint
@@ -55,9 +73,76 @@ export function getWorkerScript(config: WorkerConfig): string {
       ].join('\n')
     : ''
 
-  // Build the worker script using single-quoted strings inside to avoid
-  // template literal nesting issues. The outer function returns one big
-  // string via array join for readability.
+  // Build A/B experiment config as JSON string
+  const experimentsJson = JSON.stringify(experiments)
+
+  // Build edge rules blocks
+  const utmPersist = edgeRules.find(r => r.type === 'utm_persist' && r.enabled)
+  const geoSwaps = edgeRules.find(r => r.type === 'geo_swap' && r.enabled)
+  const referrerSwaps = edgeRules.find(r => r.type === 'referrer_swap' && r.enabled)
+  const utmSwaps = edgeRules.find(r => r.type === 'utm_swap' && r.enabled)
+
+  // UTM persistence block — injects hidden fields into forms
+  const utmPersistBlock = utmPersist ? [
+    '',
+    '      // UTM Persistence — inject hidden fields into forms',
+    '      var utmKeys = ["utm_source","utm_medium","utm_campaign","utm_term","utm_content"];',
+    '      var utmParams = {};',
+    '      utmKeys.forEach(function(k) {',
+    '        var v = url.searchParams.get(k);',
+    '        if (v) utmParams[k] = v;',
+    '      });',
+    '      if (Object.keys(utmParams).length > 0) {',
+    '        var hiddenInputs = Object.entries(utmParams)',
+    '          .map(function(e) { return \'<input type="hidden" name="\' + e[0] + \'" value="\' + e[1].replace(/"/g, "&quot;") + \'">\\n\'; })',
+    '          .join("");',
+    '        html = html.replace(/<\\/form>/gi, hiddenInputs + "</form>");',
+    '      }',
+  ].join('\n') : ''
+
+  // Geo swap block
+  const geoSwapBlock = geoSwaps && geoSwaps.rules && geoSwaps.rules.length > 0 ? [
+    '',
+    '      // Geo Swap — replace markers based on visitor country',
+    '      var country = (request.cf && request.cf.country) || "";',
+    '      var geoRules = ' + JSON.stringify(geoSwaps.rules) + ';',
+    '      geoRules.forEach(function(rule) {',
+    '        if (country === rule.match) {',
+    '          var re = new RegExp("<!--EDGE:" + rule.field + "-->([\\\\s\\\\S]*?)<!--/EDGE:" + rule.field + "-->", "g");',
+    '          html = html.replace(re, rule.value);',
+    '        }',
+    '      });',
+  ].join('\n') : ''
+
+  // Referrer swap block
+  const referrerSwapBlock = referrerSwaps && referrerSwaps.rules && referrerSwaps.rules.length > 0 ? [
+    '',
+    '      // Referrer Swap — replace markers based on referrer domain',
+    '      var refHost = "";',
+    '      try { refHost = new URL(request.headers.get("Referer") || "").hostname; } catch(e) {}',
+    '      var refRules = ' + JSON.stringify(referrerSwaps.rules) + ';',
+    '      refRules.forEach(function(rule) {',
+    '        if (refHost.indexOf(rule.match) !== -1) {',
+    '          var re = new RegExp("<!--EDGE:" + rule.field + "-->([\\\\s\\\\S]*?)<!--/EDGE:" + rule.field + "-->", "g");',
+    '          html = html.replace(re, rule.value);',
+    '        }',
+    '      });',
+  ].join('\n') : ''
+
+  // UTM swap block
+  const utmSwapBlock = utmSwaps && utmSwaps.rules && utmSwaps.rules.length > 0 ? [
+    '',
+    '      // UTM Swap — replace markers based on utm_source',
+    '      var utmSource = url.searchParams.get("utm_source") || "";',
+    '      var utmRules = ' + JSON.stringify(utmSwaps.rules) + ';',
+    '      utmRules.forEach(function(rule) {',
+    '        if (utmSource === rule.match) {',
+    '          var re = new RegExp("<!--EDGE:" + rule.field + "-->([\\\\s\\\\S]*?)<!--/EDGE:" + rule.field + "-->", "g");',
+    '          html = html.replace(re, rule.value);',
+    '        }',
+    '      });',
+  ].join('\n') : ''
+
   const lines = [
     '// ANTIGRAVITY Landing Engine -- CF Worker',
     '// Auto-generated. Do not edit manually.',
@@ -75,6 +160,41 @@ export function getWorkerScript(config: WorkerConfig): string {
     '      path = "/index.html";',
     '    } else if (!path.includes(".")) {',
     '      path = path.replace(/\\/$/, "") + "/index.html";',
+    '    }',
+    '',
+    '    // A/B Test variant routing',
+    '    var experiments = ' + experimentsJson + ';',
+    '    var variantKey = null;',
+    '    var slugPath = path.replace(/\\/index\\.html$/, "").replace(/^\\//, "") || "index";',
+    '    var exp = experiments.find(function(e) { return e.pageSlug === slugPath; });',
+    '',
+    '    if (exp && exp.variants.length > 0) {',
+    '      // Check for existing cookie',
+    '      var cookies = (request.headers.get("Cookie") || "").split(";").map(function(c) { return c.trim(); });',
+    '      var abCookie = cookies.find(function(c) { return c.startsWith("_ab_" + slugPath.replace(/[^a-z0-9]/gi, "_") + "="); });',
+    '',
+    '      if (abCookie) {',
+    '        variantKey = abCookie.split("=")[1];',
+    '      } else {',
+    '        // Weighted random assignment',
+    '        var totalWeight = exp.variants.reduce(function(s, v) { return s + v.weight; }, 0);',
+    '        var rand = Math.random() * totalWeight;',
+    '        var cumWeight = 0;',
+    '        for (var i = 0; i < exp.variants.length; i++) {',
+    '          cumWeight += exp.variants[i].weight;',
+    '          if (rand < cumWeight) {',
+    '            variantKey = exp.variants[i].key;',
+    '            break;',
+    '          }',
+    '        }',
+    '      }',
+    '',
+    '      // Rewrite path for non-control variants',
+    '      if (variantKey && variantKey !== "a") {',
+    '        var basePath = path.replace(/\\/index\\.html$/, "");',
+    '        if (basePath === "" || basePath === "/") basePath = "";',
+    '        path = basePath + "/__variant_" + variantKey + "/index.html";',
+    '      }',
     '    }',
     '',
     '    // Build R2 key from site prefix + path',
@@ -140,9 +260,18 @@ export function getWorkerScript(config: WorkerConfig): string {
     '      "X-Site-Id": "' + siteId + '",',
     '    };',
     '',
-    '    // For HTML pages, inject Ghost Popup loader before </body>',
+    '    // For HTML pages, inject popups, variant meta, and edge rules',
     '    if (ext === "html") {',
     '      var html = await object.text();',
+    '',
+    '      // Inject A/B variant meta tag for tracking',
+    '      if (variantKey) {',
+    '        html = html.replace("<head>", \'<head><meta name="x-variant" content="\' + variantKey + \'">\\n\');',
+    '      }',
+    utmPersistBlock,
+    geoSwapBlock,
+    referrerSwapBlock,
+    utmSwapBlock,
     '',
     '      // Ghost Popup injection — fetches active popups for this path',
     '      var popupScript = "<script>"',
@@ -168,6 +297,12 @@ export function getWorkerScript(config: WorkerConfig): string {
     '        + "</script>";',
     '',
     '      html = html.replace("</body>", popupScript + "\\n</body>");',
+    '',
+    '      // Set A/B cookie for returning visitors',
+    '      if (variantKey && exp && !abCookie) {',
+    '        var cookieName = "_ab_" + slugPath.replace(/[^a-z0-9]/gi, "_");',
+    '        headers["Set-Cookie"] = cookieName + "=" + variantKey + "; Path=/; Max-Age=2592000; SameSite=Lax";',
+    '      }',
     '',
     '      return new Response(html, { headers: headers });',
     '    }',

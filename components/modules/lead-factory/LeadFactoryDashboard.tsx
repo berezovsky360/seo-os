@@ -177,10 +177,17 @@ function FormsTab({ siteId }: { siteId?: string }) {
       inline: 'bg-blue-50 text-blue-600',
       popup: 'bg-amber-50 text-amber-600',
       slide_in: 'bg-purple-50 text-purple-600',
+      quiz: 'bg-emerald-50 text-emerald-600',
+      calculator: 'bg-cyan-50 text-cyan-600',
+    }
+    const labels: Record<string, string> = {
+      slide_in: 'Slide-in',
+      quiz: 'Quiz',
+      calculator: 'Calculator',
     }
     return (
       <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${styles[type] || 'bg-gray-100 text-gray-500'}`}>
-        {type === 'slide_in' ? 'Slide-in' : type.charAt(0).toUpperCase() + type.slice(1)}
+        {labels[type] || type.charAt(0).toUpperCase() + type.slice(1)}
       </span>
     )
   }
